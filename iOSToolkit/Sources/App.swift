@@ -16,11 +16,13 @@ struct Tool: Identifiable {
     let icon: String
     let color: Color
     let ready: Bool
+    var kind: Int = 0
 }
 
 struct RootView: View {
     private let tools: [Tool] = [
         Tool(title: "Tải IPA từ App Store", subtitle: "Tải app theo ID bằng Apple ID của bạn, kể cả app đã bị gỡ nếu tài khoản từng nhận", icon: "arrow.down.app.fill", color: .blue, ready: true),
+        Tool(title: "Đổi mật khẩu P12", subtitle: "Chọn gói zip chứng chỉ, nhập mật khẩu cũ và mới, ghi đè thẳng vào gói zip", icon: "key.fill", color: .green, ready: true, kind: 1),
         Tool(title: "Ký IPA", subtitle: "Sắp có", icon: "signature", color: .purple, ready: false),
         Tool(title: "Công cụ khác", subtitle: "Sắp có", icon: "wrench.and.screwdriver.fill", color: .orange, ready: false),
     ]
@@ -31,7 +33,7 @@ struct RootView: View {
                 Section {
                     ForEach(tools) { tool in
                         if tool.ready {
-                            NavigationLink { AppStoreToolView() } label: { row(tool) }
+                            NavigationLink { if tool.kind == 1 { P12ToolView() } else { AppStoreToolView() } } label: { row(tool) }
                         } else {
                             row(tool).opacity(0.5)
                         }
