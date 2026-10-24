@@ -184,7 +184,7 @@ enum StoreClient {
             }
             let plist = StoreProto.plist(data)
             guard http.statusCode == 200, let plist else {
-                if data.isEmpty { throw StoreError.emptyResponse(http.statusCode) }
+                if data.isEmpty { Diag.log("store \(endpoint.rawValue) HTTP \(http.statusCode): phản hồi rỗng"); throw StoreError.emptyResponse(http.statusCode) }
                 var snip = String(data: data.prefix(400), encoding: .utf8) ?? ""
                 snip = snip.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression).split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
                 Diag.log("store \(endpoint.rawValue) HTTP \(http.statusCode): \(snip.prefix(200))")
@@ -243,6 +243,10 @@ enum StoreClient {
         var primaryError: Error?
         do {
             primary = try await fetch(session: session, endpoint: .volumeStore, account: &account, appID: appID, version: version)
+        } catch StoreError.emptyResponse(let st) where st == 403 || st == 404 {
+            Diag.log("volumeStore rỗng \(st), thử redownload")
+            primaryFailed = true
+            primaryError = StoreError.emptyResponse(st)
         } catch StoreError.responseBody(let st, let body) where st == 403 || st == 404 {
             // Đã thấy với app đã gỡ: thử đường tải lại (redownload) thay vì dừng.
             Diag.log("volumeStore lỗi \(st), thử redownload")
@@ -254,7 +258,7 @@ enum StoreClient {
             var resolved = version ?? ""
             if resolved.isEmpty {
                 guard let region = Configuration.countryCode(for: account.store) else { throw primaryError ?? StoreError.catalogUnavailable }
-                do { resolved = try await catalogVersion(session: session, appID: appID, region: region) } catch { throw primaryError ?? StoreError.catalogUnavailable }
+                do { resolved = try await catalogVersion(session: session, appID: appID, region: region); Diag.log("phiên bản hiện hành từ catalog: \(resolved)") } catch { Diag.log("catalog lỗi: \(error)"); throw primaryError ?? StoreError.catalogUnavailable }
             }
             effective = resolved
             do {
