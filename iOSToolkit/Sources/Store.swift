@@ -1,5 +1,6 @@
 import ApplePackage
 import Foundation
+import UIKit
 
 // MARK: - Lỗi
 
@@ -232,6 +233,23 @@ enum StoreClient {
         throw StoreError.catalogUnavailable
     }
 
+    /// Chỉ để chẩn đoán: hỏi iTunes lookup yêu cầu iOS tối thiểu và vùng bán của app.
+    private static func logLookup(appID: Int64, account: Account) async {
+        let cc = Configuration.countryCode(for: account.store) ?? "us"
+        Diag.log("tài khoản: storeFront=\(account.store) vùng=\(cc) · máy iOS \(UIDevice.current.systemVersion)")
+        for c in Set([cc.lowercased(), "us"]) {
+            guard let url = URL(string: "https://itunes.apple.com/lookup?id=\(appID)&country=\(c)") else { continue }
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+                let r = (root?["results"] as? [[String: Any]])?.first
+                if let r {
+                    Diag.log("lookup[\(c)]: \(r["trackName"] ?? "?") v\(r["version"] ?? "?") · iOS tối thiểu \(r["minimumOsVersion"] ?? "?") · \(r["bundleId"] ?? "")")
+                } else { Diag.log("lookup[\(c)]: không có kết quả (app không bán ở vùng này)") }
+            } catch { Diag.log("lookup[\(c)] lỗi: \(error)") }
+        }
+    }
+
     /// Lấy "item" gói tải; volumeStore trước, rồi redownload/update khi cần.
     private static func product(account: inout Account, appID: Int64, version: String?) async throws -> [String: Any] {
         let session = makeSession()
@@ -257,6 +275,9 @@ enum StoreClient {
         if !primaryFailed {
             let keys = primary.keys.sorted().joined(separator: ",")
             Diag.log("volumeStore: failure=\(StoreProto.failureCode(primary)) lý do=\(StoreProto.fallbackReason(primary) ?? "không") status=\(StoreProto.string(primary["status"])) msg=\(StoreProto.string(primary["customerMessage"]).prefix(120)) khoá=\(keys)")
+        }
+        if StoreProto.fallbackReason(primary) == "empty-songList" {
+            await logLookup(appID: appID, account: account)
         }
         if primaryFailed || StoreProto.fallbackReason(primary) != nil {
             var resolved = version ?? ""
