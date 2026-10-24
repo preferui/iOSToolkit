@@ -1,0 +1,64 @@
+name: Build iOS Toolkit IPA
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['iOSToolkit/**', '.github/workflows/ios-toolkit.yml']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Chọn Xcode mới nhất (không beta)
+        run: |
+          set -euo pipefail
+          best_path=""; best_ver=""
+          for app in /Applications/Xcode*.app; do
+            [ -d "$app" ] || continue
+            case "$(printf '%s' "$app" | tr '[:upper:]' '[:lower:]')" in *beta*|*_rc*) continue ;; esac
+            ver="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist" 2>/dev/null || true)"
+            [ -n "$ver" ] || continue
+            if [ -z "$best_ver" ] || [ "$(printf '%s\n%s\n' "$best_ver" "$ver" | sort -V | tail -1)" = "$ver" ]; then best_ver="$ver"; best_path="$app"; fi
+          done
+          echo "Xcode $best_ver ($best_path)"
+          sudo xcode-select -s "$best_path"
+          xcodebuild -version
+      - name: Cài iOS platform và XcodeGen
+        run: |
+          xcodebuild -downloadPlatform iOS || true
+          brew install xcodegen
+      - name: Tạo project và build
+        shell: bash
+        run: |
+          set +e
+          cd iOSToolkit
+          xcodegen generate
+          mkdir -p iOSToolkit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
+          cp Package.resolved iOSToolkit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          xcodebuild -project iOSToolkit.xcodeproj -scheme iOSToolkit -configuration Release \
+            -derivedDataPath ../build -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
+            build 2>&1 | tee ../build.log
+          grep -E "async-http-client|swift-nio|applepackage" ../build.log | grep -iE "resolved|checking out|Fetched" | sort -u | head -20
+          rc=${PIPESTATUS[0]}
+          if [ $rc -ne 0 ]; then
+            grep -E "error:|error " ../build.log | sort -u | head -40 > ../errors.txt || true
+            while IFS= read -r l; do echo "::error::${l:0:400}"; done < ../errors.txt
+            exit $rc
+          fi
+      - name: Đóng gói IPA
+        run: |
+          APP=$(find build -name "iOSToolkit.app" -path "*Release-iphoneos*" | head -1)
+          echo "APP=$APP"
+          mkdir -p ipa/Payload out
+          cp -R "$APP" ipa/Payload/
+          cd ipa && zip -qry ../out/iOSToolkit.ipa Payload
+          ls -la ../out
+      - name: Phát hành
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "tk-${{ github.run_number }}" out/iOSToolkit.ipa --title "iOS Toolkit build ${{ github.run_number }}" --notes "iOS Toolkit - bo cong cu cho iOS"
+      - uses: actions/upload-artifact@v4
+        with: { name: iOSToolkit-ipa, path: out/ }
