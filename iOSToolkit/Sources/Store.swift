@@ -277,6 +277,9 @@ enum StoreClient {
             Diag.log("volumeStore: failure=\(StoreProto.failureCode(primary)) lý do=\(StoreProto.fallbackReason(primary) ?? "không") status=\(StoreProto.string(primary["status"])) msg=\(StoreProto.string(primary["customerMessage"]).prefix(120)) khoá=\(keys)")
         }
         if StoreProto.fallbackReason(primary) == "empty-songList" {
+            for k in ["metrics", "pings", "jingleAction", "jingleDocType", "authorized", "download-queue-item-count", "freeSongBalance", "creditBalance"] {
+                if let v = primary[k] { Diag.log("  \(k) = \(String(describing: v).replacingOccurrences(of: "\n", with: " ").prefix(300))") }
+            }
             await logLookup(appID: appID, account: account)
         }
         if primaryFailed || StoreProto.fallbackReason(primary) != nil {
