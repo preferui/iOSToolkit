@@ -254,6 +254,10 @@ enum StoreClient {
             primaryError = StoreError.responseBody(st, body)
         }
         var response = primary
+        if !primaryFailed {
+            let keys = primary.keys.sorted().joined(separator: ",")
+            Diag.log("volumeStore: failure=\(StoreProto.failureCode(primary)) lý do=\(StoreProto.fallbackReason(primary) ?? "không") status=\(StoreProto.string(primary["status"])) msg=\(StoreProto.string(primary["customerMessage"]).prefix(120)) khoá=\(keys)")
+        }
         if primaryFailed || StoreProto.fallbackReason(primary) != nil {
             var resolved = version ?? ""
             if resolved.isEmpty {
@@ -263,7 +267,8 @@ enum StoreClient {
             effective = resolved
             do {
                 response = try await fetch(session: session, endpoint: .redownload, account: &account, appID: appID, version: resolved)
-            } catch StoreError.emptyResponse(500) {
+            } catch StoreError.emptyResponse(let st) where st == 500 || st == 403 {
+                Diag.log("redownload rỗng \(st), thử update")
                 response = try await fetch(session: session, endpoint: .update, account: &account, appID: appID, version: resolved)
             }
         }
