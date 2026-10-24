@@ -147,7 +147,7 @@ struct P12ZipResult {
 }
 
 enum P12Zip {
-    static func process(src: URL, old: String, new: String) throws -> P12ZipResult {
+    static func process(src: URL, old: String, new: String, writeBack: Bool) throws -> P12ZipResult {
         let original = try Data(contentsOf: src)
         let work = FileManager.default.temporaryDirectory.appendingPathComponent("p12-\(UUID().uuidString).zip")
         try original.write(to: work)
@@ -185,6 +185,7 @@ enum P12Zip {
         if (try? original.write(to: b)) != nil { backup = b }
         var wrote = false
         var werr: String?
+        if !writeBack { return P12ZipResult(data: newZip, names: results.map { ($0.0 as NSString).lastPathComponent }, wroteBack: false, writeError: nil, backup: backup) }
         do {
             try newZip.write(to: src)
             wrote = (try? Data(contentsOf: src))?.count == newZip.count
@@ -258,7 +259,7 @@ struct P12ToolView: View {
                     }
                 }
             } header: { Text("Gói chứng chỉ") } footer: {
-                Text("Gói zip chứa tệp .p12 (và thường cả .mobileprovision). Chọn đúng tệp trong app Tệp để app ghi đè trực tiếp được.")
+                Text("Gói zip chứa tệp .p12 (và thường cả .mobileprovision). Sau khi đổi, app mở hộp lưu tệp với đúng tên cũ để bạn bấm “Thay thế”.")
             }
 
             Section {
@@ -274,7 +275,7 @@ struct P12ToolView: View {
                 } label: { HStack { Image(systemName: "key.fill"); Text(busy ? "Đang đổi…" : "Đổi mật khẩu"); if busy { Spacer(); ProgressView() } } }
                 .disabled(zipURL == nil || oldPass.isEmpty || newPass.isEmpty || busy)
             } footer: {
-                Text("Tool ghi đè trực tiếp vào gói zip gốc và lưu một bản sao lưu gốc trong thư mục “P12Backup” của app. Nếu không ghi đè được, app mở hộp lưu tệp với đúng tên cũ: chọn thư mục chứa tệp gốc rồi bấm “Thay thế”.")
+                Text("Bản gốc được sao lưu trong thư mục “P12Backup” của app. Sau khi đổi, app mở hộp lưu tệp với đúng tên cũ: chọn thư mục chứa tệp gốc rồi bấm “Thay thế”.")
             }
 
             if let url = exportURL {
@@ -316,7 +317,7 @@ struct P12ToolView: View {
 
     private func pickZip() {
         focus = false
-        DocPicker.present(types: [.zip, .data, .item], asCopy: false) { urls in
+        DocPicker.present(types: [.zip, .data, .item], asCopy: true) { urls in
             guard let url = urls.first else { return }
             guard url.pathExtension.lowercased() == "zip" else { isError = true; message = "Tệp “\(url.lastPathComponent)” không phải .zip."; return }
             scoped?.stopAccessingSecurityScopedResource()
@@ -337,7 +338,7 @@ struct P12ToolView: View {
         Diag.log("p12: đổi mật khẩu cho \(src.lastPathComponent)")
         Task {
             do {
-                let r = try await Task.detached { try P12Zip.process(src: src, old: o, new: n) }.value
+                let r = try await Task.detached { try P12Zip.process(src: src, old: o, new: n, writeBack: false) }.value
                 let names = r.names.joined(separator: ", ")
                 if r.wroteBack {
                     isError = false
@@ -349,7 +350,7 @@ struct P12ToolView: View {
                     try r.data.write(to: out)
                     exportURL = out
                     isError = false
-                    message = "Đã đổi mật khẩu \(names) nhưng không ghi đè được tệp gốc (\(r.writeError ?? "không rõ")). Hãy lưu bản mới với đúng tên cũ và chọn “Thay thế”."
+                    message = "Đã đổi mật khẩu \(names). Hộp lưu tệp sẽ mở với đúng tên cũ: chọn thư mục chứa tệp gốc rồi bấm “Thay thế”."
                     saveExport(out)
                 }
                 Diag.log("p12: xong, ghi đè=\(r.wroteBack) \(r.writeError ?? "")")
