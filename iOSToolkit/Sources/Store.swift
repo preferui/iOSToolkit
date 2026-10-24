@@ -76,8 +76,9 @@ enum StoreProto {
         return url
     }
 
-    static func payload(endpoint: Endpoint, appID: Int64, guid: String, version: String?) -> [String: Any] {
+    static func payload(endpoint: Endpoint, appID: Int64, guid: String, version: String?, pricing: String? = nil) -> [String: Any] {
         var r: [String: Any] = ["creditDisplay": "", "guid": guid, "salableAdamId": appID, "serialNumber": "0"]
+        if let pricing { r["pricingParameters"] = pricing }
         if let version, !version.isEmpty { r[endpoint.versionKey] = version }
         return r
     }
@@ -150,7 +151,7 @@ enum StoreClient {
         return URLSession(configuration: c, delegate: NoRedirect(), delegateQueue: nil)
     }
 
-    private static func fetch(session: URLSession, endpoint: StoreProto.Endpoint, account: inout Account, appID: Int64, version: String?) async throws -> [String: Any] {
+    private static func fetch(session: URLSession, endpoint: StoreProto.Endpoint, account: inout Account, appID: Int64, version: String?, pricing: String? = nil) async throws -> [String: Any] {
         var comps = URLComponents()
         comps.scheme = "https"
         comps.host = endpoint == .volumeStore ? Configuration.storeAPIHost(pod: account.pod) : "downloaddispatch.itunes.apple.com"
@@ -162,7 +163,7 @@ enum StoreClient {
         }
         comps.queryItems = [URLQueryItem(name: "guid", value: Configuration.deviceIdentifier)]
         guard var url = comps.url else { throw StoreError.invalidRedirect }
-        let body = try PropertyListSerialization.data(fromPropertyList: StoreProto.payload(endpoint: endpoint, appID: appID, guid: Configuration.deviceIdentifier, version: version), format: .xml, options: 0)
+        let body = try PropertyListSerialization.data(fromPropertyList: StoreProto.payload(endpoint: endpoint, appID: appID, guid: Configuration.deviceIdentifier, version: version, pricing: pricing), format: .xml, options: 0)
         for hop in 0 ... 3 {
             try Task.checkCancellation()
             url = try StoreProto.validatedURL(url)
@@ -271,7 +272,6 @@ enum StoreClient {
             primaryFailed = true
             primaryError = StoreError.responseBody(st, body)
         }
-        var response = primary
         if !primaryFailed {
             let keys = primary.keys.sorted().joined(separator: ",")
             Diag.log("volumeStore: failure=\(StoreProto.failureCode(primary)) lý do=\(StoreProto.fallbackReason(primary) ?? "không") status=\(StoreProto.string(primary["status"])) msg=\(StoreProto.string(primary["customerMessage"]).prefix(120)) khoá=\(keys)")
@@ -282,6 +282,21 @@ enum StoreClient {
             }
             await logLookup(appID: appID, account: account)
         }
+        if StoreProto.fallbackReason(primary) == "empty-songList", let region = Configuration.countryCode(for: account.store) {
+            let cat = try? await catalogVersion(session: session, appID: appID, region: region)
+            var tries: [(String?, String?)] = [("STDRDL", version)]
+            if let cat { tries += [(nil, cat), ("STDRDL", cat)] }
+            for (pr, ver) in tries {
+                let label = "pricing=\(pr ?? "-") ver=\(ver ?? "-")"
+                do {
+                    let r = try await fetch(session: session, endpoint: .volumeStore, account: &account, appID: appID, version: ver, pricing: pr)
+                    let why = StoreProto.fallbackReason(r)
+                    Diag.log("thử volumeStore \(label): failure=\(StoreProto.failureCode(r)) lý do=\(why ?? "không") songList=\((r["songList"] as? [Any])?.count ?? -1)")
+                    if why == nil { primary = r; effective = ver; break }
+                } catch { Diag.log("thử volumeStore \(label): lỗi \(error)") }
+            }
+        }
+        var response = primary
         if primaryFailed || StoreProto.fallbackReason(primary) != nil {
             var resolved = version ?? ""
             if resolved.isEmpty {
