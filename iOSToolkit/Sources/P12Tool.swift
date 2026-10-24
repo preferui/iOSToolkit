@@ -260,18 +260,25 @@ struct P12ToolView: View {
         .toolbar { ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Xong") { focus = false } } }
         .overlay(alignment: .top) { banner }
         .animation(.easeInOut(duration: 0.2), value: message)
-        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.zip]) { res in
+        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.zip, .archive, .data, .item]) { res in
+            switch res {
+            case let .failure(e): isError = true; message = "Không mở được hộp chọn tệp: \(e.localizedDescription)"; return
+            case let .success(url):
+                guard url.pathExtension.lowercased() == "zip" else { isError = true; message = "Tệp “\(url.lastPathComponent)” không phải .zip."; return }
+            }
             guard case let .success(url) = res else { return }
             scoped?.stopAccessingSecurityScopedResource()
             _ = url.startAccessingSecurityScopedResource()
             scoped = url; zipURL = url; exportDoc = nil; message = nil
         }
-        .fileExporter(isPresented: $showExporter, document: exportDoc, contentType: .zip, defaultFilename: baseName) { res in
-            switch res {
-            case .success: isError = false; message = "Đã lưu bản zip mới."
-            case let .failure(e): isError = true; message = e.localizedDescription
+        .background(
+            Color.clear.fileExporter(isPresented: $showExporter, document: exportDoc, contentType: .zip, defaultFilename: baseName) { res in
+                switch res {
+                case .success: isError = false; message = "Đã lưu bản zip mới."
+                case let .failure(e): isError = true; message = e.localizedDescription
+                }
             }
-        }
+        )
         .onDisappear { scoped?.stopAccessingSecurityScopedResource(); scoped = nil }
     }
 
