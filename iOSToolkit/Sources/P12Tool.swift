@@ -1,6 +1,7 @@
 import OpenSSL
 import Security
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 import ZIPFoundation
 
@@ -193,12 +194,42 @@ enum P12Zip {
     }
 }
 
-struct ZipDoc: FileDocument {
-    static var readableContentTypes: [UTType] { [.zip] }
-    var data: Data
-    init(data: Data) { self.data = data }
-    init(configuration: ReadConfiguration) throws { data = configuration.file.regularFileContents ?? Data() }
-    func fileWrapper(configuration _: WriteConfiguration) throws -> FileWrapper { FileWrapper(regularFileWithContents: data) }
+/// Hộp chọn/lưu tệp dựng thẳng bằng UIKit (fileImporter của SwiftUI không trả kết quả ổn định trong Form).
+final class DocPicker: NSObject, UIDocumentPickerDelegate {
+    private static var current: DocPicker?
+    private var onPick: (([URL]) -> Void)?
+
+    static func present(types: [UTType], asCopy: Bool, onPick: @escaping ([URL]) -> Void) {
+        let c = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: asCopy)
+        show(c, onPick)
+    }
+
+    static func presentExport(_ file: URL, onPick: @escaping ([URL]) -> Void) {
+        let c = UIDocumentPickerViewController(forExporting: [file], asCopy: true)
+        show(c, onPick)
+    }
+
+    private static func show(_ c: UIDocumentPickerViewController, _ onPick: @escaping ([URL]) -> Void) {
+        let d = DocPicker()
+        d.onPick = onPick
+        current = d
+        c.delegate = d
+        c.allowsMultipleSelection = false
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+              var top = scene.windows.first(where: { $0.isKeyWindow })?.rootViewController ?? scene.windows.first?.rootViewController else { return }
+        while let next = top.presentedViewController { top = next }
+        top.present(c, animated: true)
+    }
+
+    func documentPicker(_: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        Diag.log("hộp chọn tệp: nhận \(urls.map(\.lastPathComponent))")
+        onPick?(urls); DocPicker.current = nil
+    }
+
+    func documentPickerWasCancelled(_: UIDocumentPickerViewController) {
+        Diag.log("hộp chọn tệp: huỷ")
+        DocPicker.current = nil
+    }
 }
 
 // MARK: - Giao diện
@@ -212,9 +243,7 @@ struct P12ToolView: View {
     @State private var busy = false
     @State private var message: String?
     @State private var isError = false
-    @State private var showImporter = false
-    @State private var showExporter = false
-    @State private var exportDoc: ZipDoc?
+    @State private var exportURL: URL?
     @FocusState private var focus: Bool
 
     private var baseName: String { (zipURL?.deletingPathExtension().lastPathComponent) ?? "chung-chi" }
@@ -222,7 +251,7 @@ struct P12ToolView: View {
     var body: some View {
         Form {
             Section {
-                Button { showImporter = true } label: {
+                Button { pickZip() } label: {
                     HStack {
                         Image(systemName: "doc.zipper")
                         Text(zipURL?.lastPathComponent ?? "Chọn gói zip chứng chỉ…").lineLimit(1)
@@ -248,10 +277,10 @@ struct P12ToolView: View {
                 Text("Tool ghi đè trực tiếp vào gói zip gốc và lưu một bản sao lưu gốc trong thư mục “P12Backup” của app. Nếu không ghi đè được, app mở hộp lưu tệp với đúng tên cũ: chọn thư mục chứa tệp gốc rồi bấm “Thay thế”.")
             }
 
-            if let doc = exportDoc {
+            if let url = exportURL {
                 Section {
-                    Button { showExporter = true } label: { Label("Lưu bản zip mới…", systemImage: "square.and.arrow.down") }
-                    ShareLink(item: doc.data.asTempFile(name: baseName + ".zip") ?? URL(fileURLWithPath: "/dev/null")) { Label("Chia sẻ bản zip mới", systemImage: "square.and.arrow.up") }
+                    Button { saveExport(url) } label: { Label("Lưu bản zip mới…", systemImage: "square.and.arrow.down") }
+                    ShareLink(item: url) { Label("Chia sẻ bản zip mới", systemImage: "square.and.arrow.up") }
                 }
             }
         }
@@ -260,25 +289,6 @@ struct P12ToolView: View {
         .toolbar { ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("Xong") { focus = false } } }
         .overlay(alignment: .top) { banner }
         .animation(.easeInOut(duration: 0.2), value: message)
-        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.zip, .archive, .data, .item]) { res in
-            switch res {
-            case let .failure(e): isError = true; message = "Không mở được hộp chọn tệp: \(e.localizedDescription)"; return
-            case let .success(url):
-                guard url.pathExtension.lowercased() == "zip" else { isError = true; message = "Tệp “\(url.lastPathComponent)” không phải .zip."; return }
-            }
-            guard case let .success(url) = res else { return }
-            scoped?.stopAccessingSecurityScopedResource()
-            _ = url.startAccessingSecurityScopedResource()
-            scoped = url; zipURL = url; exportDoc = nil; message = nil
-        }
-        .background(
-            Color.clear.fileExporter(isPresented: $showExporter, document: exportDoc, contentType: .zip, defaultFilename: baseName) { res in
-                switch res {
-                case .success: isError = false; message = "Đã lưu bản zip mới."
-                case let .failure(e): isError = true; message = e.localizedDescription
-                }
-            }
-        )
         .onDisappear { scoped?.stopAccessingSecurityScopedResource(); scoped = nil }
     }
 
@@ -304,9 +314,25 @@ struct P12ToolView: View {
         }
     }
 
+    private func pickZip() {
+        focus = false
+        DocPicker.present(types: [.zip, .data, .item], asCopy: false) { urls in
+            guard let url = urls.first else { return }
+            guard url.pathExtension.lowercased() == "zip" else { isError = true; message = "Tệp “\(url.lastPathComponent)” không phải .zip."; return }
+            scoped?.stopAccessingSecurityScopedResource()
+            let ok = url.startAccessingSecurityScopedResource()
+            Diag.log("p12: chọn \(url.lastPathComponent), quyền truy cập=\(ok)")
+            scoped = url; zipURL = url; exportURL = nil; message = nil
+        }
+    }
+
+    private func saveExport(_ url: URL) {
+        DocPicker.presentExport(url) { _ in isError = false; message = "Đã lưu bản zip mới." }
+    }
+
     private func run() {
         guard let src = zipURL else { return }
-        busy = true; message = nil; exportDoc = nil
+        busy = true; message = nil; exportURL = nil
         let o = oldPass, n = newPass
         Diag.log("p12: đổi mật khẩu cho \(src.lastPathComponent)")
         Task {
@@ -318,10 +344,13 @@ struct P12ToolView: View {
                     message = "Đã đổi mật khẩu \(names) và ghi đè trực tiếp vào “\(src.lastPathComponent)”." + (r.backup != nil ? " Bản gốc được sao lưu trong thư mục P12Backup của app." : "")
                     oldPass = ""; newPass = ""
                 } else {
-                    exportDoc = ZipDoc(data: r.data)
+                    let out = FileManager.default.temporaryDirectory.appendingPathComponent(src.lastPathComponent)
+                    try? FileManager.default.removeItem(at: out)
+                    try r.data.write(to: out)
+                    exportURL = out
                     isError = false
                     message = "Đã đổi mật khẩu \(names) nhưng không ghi đè được tệp gốc (\(r.writeError ?? "không rõ")). Hãy lưu bản mới với đúng tên cũ và chọn “Thay thế”."
-                    showExporter = true
+                    saveExport(out)
                 }
                 Diag.log("p12: xong, ghi đè=\(r.wroteBack) \(r.writeError ?? "")")
             } catch {
@@ -331,12 +360,5 @@ struct P12ToolView: View {
             }
             busy = false
         }
-    }
-}
-
-private extension Data {
-    func asTempFile(name: String) -> URL? {
-        let u = FileManager.default.temporaryDirectory.appendingPathComponent(name)
-        return (try? write(to: u)) != nil ? u : nil
     }
 }
