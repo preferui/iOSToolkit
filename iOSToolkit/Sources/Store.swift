@@ -151,7 +151,7 @@ enum StoreClient {
         return URLSession(configuration: c, delegate: NoRedirect(), delegateQueue: nil)
     }
 
-    private static func fetch(session: URLSession, endpoint: StoreProto.Endpoint, account: inout Account, appID: Int64, version: String?, pricing: String? = nil) async throws -> [String: Any] {
+    private static func fetch(session: URLSession, endpoint: StoreProto.Endpoint, account: inout Account, appID: Int64, version: String?, pricing: String? = nil, legacy: Bool = false) async throws -> [String: Any] {
         var comps = URLComponents()
         comps.scheme = "https"
         comps.host = endpoint == .volumeStore ? Configuration.storeAPIHost(pod: account.pod) : "downloaddispatch.itunes.apple.com"
@@ -170,8 +170,8 @@ enum StoreClient {
             var req = URLRequest(url: url)
             req.httpMethod = "POST"
             req.httpBody = body
-            req.setValue("application/x-apple-plist", forHTTPHeaderField: "Content-Type")
-            req.setValue(Configuration.userAgent, forHTTPHeaderField: "User-Agent")
+            req.setValue(legacy ? "application/x-www-form-urlencoded" : "application/x-apple-plist", forHTTPHeaderField: "Content-Type")
+            req.setValue(legacy ? "Configurator/2.15 (Macintosh; OS X 11.0.0; 16G29) AppleWebKit/2603.3.8" : Configuration.userAgent, forHTTPHeaderField: "User-Agent")
             req.setValue(Locale.preferredLanguages.prefix(3).joined(separator: ", "), forHTTPHeaderField: "Accept-Language")
             req.setValue(account.directoryServicesIdentifier, forHTTPHeaderField: "iCloud-DSID")
             req.setValue(account.directoryServicesIdentifier, forHTTPHeaderField: "X-Dsid")
@@ -284,12 +284,12 @@ enum StoreClient {
         }
         if StoreProto.fallbackReason(primary) == "empty-songList", let region = Configuration.countryCode(for: account.store) {
             let cat = try? await catalogVersion(session: session, appID: appID, region: region)
-            var tries: [(String?, String?)] = [("STDRDL", version)]
-            if let cat { tries += [(nil, cat), ("STDRDL", cat)] }
-            for (pr, ver) in tries {
-                let label = "pricing=\(pr ?? "-") ver=\(ver ?? "-")"
+            var tries: [(String?, String?, Bool)] = [(nil, version, true)]
+            if let cat { tries += [(nil, cat, true)] }
+            for (pr, ver, lg) in tries {
+                let label = "pricing=\(pr ?? "-") ver=\(ver ?? "-") kiểu-ipadownloader=\(lg)"
                 do {
-                    let r = try await fetch(session: session, endpoint: .volumeStore, account: &account, appID: appID, version: ver, pricing: pr)
+                    let r = try await fetch(session: session, endpoint: .volumeStore, account: &account, appID: appID, version: ver, pricing: pr, legacy: lg)
                     let why = StoreProto.fallbackReason(r)
                     Diag.log("thử volumeStore \(label): failure=\(StoreProto.failureCode(r)) lý do=\(why ?? "không") songList=\((r["songList"] as? [Any])?.count ?? -1)")
                     if why == nil { primary = r; effective = ver; break }
