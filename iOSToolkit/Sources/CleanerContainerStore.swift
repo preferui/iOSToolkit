@@ -15,7 +15,7 @@ enum CleanerContainerStore {
 
     static func installedApplications(progress: ((Int, Int) -> Void)? = nil) -> (applications: [CleanerApplication], error: String?) {
         var enumerationError: NSString?
-        let identifiers = MCMEnumerateIdentifiersForClass(2, maxApplications, &enumerationError)
+        let identifiers = MCMEnumerateIdentifiersForClass(2, UInt(maxApplications), &enumerationError)
         guard !identifiers.isEmpty else {
             return ([], enumerationError.map { String($0) } ?? "Không lấy được danh sách ứng dụng từ iOS.")
         }

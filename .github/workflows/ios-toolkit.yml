@@ -41,13 +41,13 @@ jobs:
             -derivedDataPath ../build -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
             build 2>&1 | tee ../build.log
-          grep -E "async-http-client|swift-nio|applepackage" ../build.log | grep -iE "resolved|checking out|Fetched" | sort -u | head -20
           rc=${PIPESTATUS[0]}
           if [ $rc -ne 0 ]; then
             grep -E "error:|error " ../build.log | sort -u | head -40 > ../errors.txt || true
             while IFS= read -r l; do echo "::error::${l:0:400}"; done < ../errors.txt
             exit $rc
           fi
+          grep -E "async-http-client|swift-nio|applepackage" ../build.log | grep -iE "resolved|checking out|Fetched" | sort -u | head -20
       - name: Đóng gói IPA
         run: |
           APP=$(find build -name "iOSToolkit.app" -path "*Release-iphoneos*" | head -1)
