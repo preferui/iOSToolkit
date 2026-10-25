@@ -370,3 +370,126 @@ private enum CleanerAlert: Identifiable {
 
 
 
+
+
+// MARK: - Cleaner iOS compatibility gate
+private enum CleanerCompatibilityPolicy {
+    static let supportedVersions = [
+        "iOS 17.0 – 17.7.x",
+        "iOS 18.0 – 18.7.1",
+        "iOS 26.0 – 26.6.1",
+        "iOS 27 beta (chỉ các build được xác nhận)"
+    ]
+
+    static var currentBuild: String {
+        var size = 0
+        sysctlbyname("kern.osversion", nil, &size, nil, 0)
+        guard size > 1 else { return "" }
+        var bytes = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("kern.osversion", &bytes, &size, nil, 0) == 0 else { return "" }
+        return String(cString: bytes)
+    }
+
+    static var isSupported: Bool {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        let major = v.majorVersion, minor = v.minorVersion, patch = v.patchVersion
+        if major == 17 { return minor == 0 || (minor >= 1 && minor <= 7) }
+        if major == 18 {
+            return minor == 0 || (minor >= 1 && minor < 7) || (minor == 7 && patch <= 1)
+        }
+        if major == 26 {
+            return minor == 0 || (minor >= 1 && minor < 6) || (minor == 6 && patch <= 1)
+        }
+        if major == 27 {
+            return ["24A5355q", "24A5370h", "24A5380h", "24A5390f"].contains(currentBuild)
+        }
+        return false
+    }
+
+    static var versionText: String {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        return "iOS \(v.majorVersion).\(v.minorVersion).\(v.patchVersion)"
+    }
+}
+
+struct CleanerCompatibilityView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [Color.blue.opacity(0.16), Color.cyan.opacity(0.08), Color(.systemBackground)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            ).ignoresSafeArea()
+
+            VStack(spacing: 22) {
+                Spacer(minLength: 24)
+                ZStack {
+                    Circle().fill((CleanerCompatibilityPolicy.isSupported ? Color.green : Color.red).opacity(0.13))
+                        .frame(width: 104, height: 104)
+                    Image(systemName: CleanerCompatibilityPolicy.isSupported ? "checkmark.shield.fill" : "xmark.shield.fill")
+                        .font(.system(size: 48, weight: .medium))
+                        .foregroundStyle(CleanerCompatibilityPolicy.isSupported ? .green : .red)
+                }
+
+                VStack(spacing: 8) {
+                    Text(CleanerCompatibilityPolicy.isSupported ? "Thiết bị được hỗ trợ" : "iOS chưa được hỗ trợ")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
+                        .multilineTextAlignment(.center)
+                    Text("Phiên bản hiện tại: \(CleanerCompatibilityPolicy.versionText)")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Text(CleanerCompatibilityPolicy.isSupported
+                         ? "Phiên bản iOS này nằm trong danh sách tương thích của Cleaner."
+                         : "Cleaner sẽ không được mở trên phiên bản này để tránh lỗi hoặc hoạt động không ổn định.")
+                        .font(.subheadline).multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary).padding(.horizontal, 8)
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("Phiên bản được hỗ trợ", systemImage: "checkmark.circle.fill")
+                        .font(.headline).foregroundStyle(.primary)
+                    ForEach(CleanerCompatibilityPolicy.supportedVersions, id: \.self) { version in
+                        HStack(spacing: 10) {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                            Text(version).font(.subheadline)
+                            Spacer()
+                        }
+                    }
+                }
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(.white.opacity(0.35)))
+
+                if CleanerCompatibilityPolicy.isSupported {
+                    NavigationLink {
+                        CleanerToolView()
+                    } label: {
+                        HStack {
+                            Text("Tiếp tục vào Dọn dẹp")
+                            Image(systemName: "arrow.right")
+                        }
+                        .font(.headline).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity).padding(.vertical, 16)
+                        .background(LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing),
+                                    in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button { dismiss() } label: {
+                        Label("Quay lại", systemImage: "chevron.left")
+                            .font(.headline).foregroundStyle(.white)
+                            .frame(maxWidth: .infinity).padding(.vertical, 16)
+                            .background(Color.secondary, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer(minLength: 18)
+            }
+            .padding(.horizontal, 22)
+        }
+        .navigationTitle("Kiểm tra iOS")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+    }
+}
