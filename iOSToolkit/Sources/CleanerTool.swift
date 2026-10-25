@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import Darwin
 
 private struct CleanerRecord: Identifiable {
     let app: CleanerApplication
