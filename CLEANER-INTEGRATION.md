@@ -8,8 +8,8 @@ Cleaner chỉ xóa nội dung bên trong `Library/Caches` và `tmp` của ứng 
 
 - Bundle ID được đặt là `com.apple.mobile.MobileHouseArrest`, theo yêu cầu của cầu nối MCM trong 3105. ID `com.realmios.ioskit` không được cầu nối này chấp nhận.
 - Phần truy cập container dùng cơ chế đặc quyền của 3105. Theo hướng dẫn 3105, bản thiết bị cần ký bằng chứng chỉ doanh nghiệp; SideStore, AltStore, 3uTools và LiveContainer không được hỗ trợ.
-- Quy trình chỉ chạy trên các phiên bản/build iOS được 3105 xác nhận. Phiên bản không được hỗ trợ sẽ bị chặn trước khi quét.
+- Cleaner kiểm tra phiên bản trước khi khởi chạy chuỗi khai thác hoặc quét. iOSToolkit hiện chỉ cho phép iOS/iPadOS 17.0–17.7.x, 18.0–18.7.1 và 26.0.x. Các bản 26.1 trở lên và iOS 27 bị chặn vì chưa có offsets được xác nhận trong bản tích hợp này.
+- Tài liệu offsets của 3105 mô tả giới hạn tổng quát 17.0–26.0.x và nêu các thiết bị/build đã thử nghiệm. Dải được bật ở đây hẹp hơn; phiên bản trong dải không đồng nghĩa mọi mẫu máy đã được kiểm chứng.
 - Mã nguồn 3105 được cấp phép GPL-3.0. Các tệp `LICENSE` và `THIRD_PARTY_NOTICES.md` đi kèm để giữ thông tin giấy phép và ghi công.
 
 Tham chiếu: https://github.com/YangJiiii/3105/releases
-
