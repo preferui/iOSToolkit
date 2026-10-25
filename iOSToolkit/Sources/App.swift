@@ -34,7 +34,7 @@ struct RootView: View {
                         if tool.ready {
                             NavigationLink {
                                 if tool.kind == 1 { P12ToolView() }
-                                else if tool.kind == 2 { CleanerToolView() }
+                                else if tool.kind == 2 { CleanerCompatibilityView() }
                                 else { AppStoreToolView() }
                             } label: { row(tool) }
                         } else {
