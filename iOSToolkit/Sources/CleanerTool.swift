@@ -58,7 +58,7 @@ struct CleanerToolView: View {
     }
 
     private var currentOSDescription: String {
-        "\\(currentOS.majorVersion).\\(currentOS.minorVersion).\\(currentOS.patchVersion)"
+        "\(currentOS.majorVersion).\(currentOS.minorVersion).\(currentOS.patchVersion)"
     }
 
     var body: some View {
@@ -93,7 +93,7 @@ struct CleanerToolView: View {
                     .frame(maxWidth: .infinity)
 
                     VStack(spacing: 0) {
-                        LabeledContent("Phiên bản hiện tại", value: "iOS \\(currentOSDescription)")
+                        LabeledContent("Phiên bản hiện tại", value: "iOS \(currentOSDescription)")
                         Divider().padding(.leading)
                         LabeledContent("Build", value: currentBuild.isEmpty ? "Không xác định" : currentBuild)
                     }
@@ -427,7 +427,7 @@ struct CleanerToolView: View {
                 progressFraction = 1
                 progressLabel = "Dọn xong"
                 cleaning = false
-                alert = .message(failed == 0 ? "Đã giải phóng khoảng \\(formatBytes(freed)) và xóa \\(removed) tệp." : "Đã giải phóng khoảng \\(formatBytes(freed)), xóa \\(removed) tệp. Có \\(failed) mục không xử lý được.")
+                alert = .message(failed == 0 ? "Đã giải phóng khoảng \(formatBytes(freed)) và xóa \(removed) tệp." : "Đã giải phóng khoảng \(formatBytes(freed)), xóa \(removed) tệp. Có \(failed) mục không xử lý được.")
             }
         }
     }
