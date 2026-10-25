@@ -17,6 +17,7 @@ struct CleanerToolView: View {
     @State private var scanMessage: String?
     @State private var alert: CleanerAlert?
     @State private var accessPrepared = false
+    @State private var compatibilityConfirmed = false
     @State private var progressFraction = 0.0
     @State private var progressLabel = "Sẵn sàng"
 
@@ -41,7 +42,117 @@ struct CleanerToolView: View {
     }
     private var isBusy: Bool { scanning || cleaning }
 
+    private var currentOS: OperatingSystemVersion {
+        ProcessInfo.processInfo.operatingSystemVersion
+    }
+
+    private var currentBuild: String { operatingSystemBuild() }
+
+    private var isCurrentOSSupported: Bool {
+        KernelExploit.isApplicable(
+            major: currentOS.majorVersion,
+            minor: currentOS.minorVersion,
+            patch: currentOS.patchVersion,
+            build: currentBuild
+        )
+    }
+
+    private var currentOSDescription: String {
+        "\\(currentOS.majorVersion).\\(currentOS.minorVersion).\\(currentOS.patchVersion)"
+    }
+
     var body: some View {
+        Group {
+            if compatibilityConfirmed {
+                cleanerContent
+            } else {
+                compatibilityGate
+            }
+        }
+    }
+
+    private var compatibilityGate: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Image(systemName: isCurrentOSSupported ? "checkmark.shield.fill" : "xmark.shield.fill")
+                        .font(.system(size: 42, weight: .medium))
+                        .foregroundStyle(isCurrentOSSupported ? Color.green : Color.orange)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 28)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .center, spacing: 8) {
+                        Text("Kiểm tra phiên bản iOS")
+                            .font(.title2.weight(.semibold))
+                        Text("Cleaner cần xác nhận khả năng tương thích trước khi quét hoặc dọn dữ liệu.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    VStack(spacing: 0) {
+                        LabeledContent("Phiên bản hiện tại", value: "iOS \\(currentOSDescription)")
+                        Divider().padding(.leading)
+                        LabeledContent("Build", value: currentBuild.isEmpty ? "Không xác định" : currentBuild)
+                    }
+                    .padding(.horizontal, 14)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: isCurrentOSSupported ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .foregroundStyle(isCurrentOSSupported ? Color.green : Color.orange)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(isCurrentOSSupported ? "Thiết bị nằm trong danh sách hỗ trợ" : "Phiên bản này chưa được hỗ trợ")
+                                .font(.subheadline.weight(.semibold))
+                            Text(isCurrentOSSupported
+                                 ? "Bạn có thể tiếp tục vào Cleaner. Khả năng tương thích còn phụ thuộc vào thiết bị và cách cài đặt."
+                                 : "Cleaner sẽ không chạy quét hay dọn trên phiên bản này. Hãy cập nhật ứng dụng sau khi có bản hỗ trợ phù hợp.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background((isCurrentOSSupported ? Color.green : Color.orange).opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Các phiên bản được bật")
+                            .font(.subheadline.weight(.semibold))
+                        Text("iOS 17.0–17.7.x  ·  iOS 18.0–18.7.1  ·  iOS 26.0.x")
+                            .font(.subheadline.monospacedDigit())
+                        Text("Bản iOS ngoài danh sách sẽ bị chặn trước khi Cleaner chuẩn bị quyền truy cập.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 14))
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
+            }
+
+            Button {
+                compatibilityConfirmed = true
+            } label: {
+                Label("Vào Cleaner", systemImage: "arrow.right")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!isCurrentOSSupported)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+        }
+        .navigationTitle("Tương thích")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var cleanerContent: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -191,7 +302,7 @@ struct CleanerToolView: View {
             DispatchQueue.main.async {
                 guard access else {
                     scanning = false
-                    let text = "Không thể kích hoạt quyền truy cập cần thiết trên thiết bị này. Hãy kiểm tra phiên bản iOS và cách ký/cài đặt ứng dụng."
+                    let text = "Không thể chuẩn bị quyền truy cập. Phiên bản iOS/build hoặc cách cài đặt có thể không tương thích. Cleaner chưa quét hay xóa dữ liệu."
                     scanMessage = text
                     alert = .message(text)
                     return
@@ -316,7 +427,7 @@ struct CleanerToolView: View {
                 progressFraction = 1
                 progressLabel = "Dọn xong"
                 cleaning = false
-                alert = .message("Đã giải phóng khoảng \(formatBytes(freed)); xóa \(removed) tệp. Không xử lý được \(failed) mục.")
+                alert = .message(failed == 0 ? "Đã giải phóng khoảng \\(formatBytes(freed)) và xóa \\(removed) tệp." : "Đã giải phóng khoảng \\(formatBytes(freed)), xóa \\(removed) tệp. Có \\(failed) mục không xử lý được.")
             }
         }
     }
