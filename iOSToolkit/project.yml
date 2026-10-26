@@ -13,6 +13,21 @@ packages:
   OpenSSL:
     url: https://github.com/Lakr233/openssl-spm.git
     from: 4.0.1
+  SwiftCrypto:
+    url: https://github.com/apple/swift-crypto.git
+    exact: 4.3.1
+  SwiftASN1:
+    url: https://github.com/apple/swift-asn1.git
+    exact: 1.6.0
+  AnisetteKit:
+    url: https://github.com/mahee96/anisettekit.git
+    branch: main
+  GSACryptoKit:
+    url: https://github.com/mahee96/gsacryptokit.git
+    branch: main
+  CodeSignKit:
+    url: https://github.com/mahee96/codesignkit.git
+    branch: main
 targets:
   iOSToolkit:
     type: application
@@ -27,6 +42,18 @@ targets:
         product: OpenSSL
       - package: ZIPFoundation
         product: ZIPFoundation
+      - package: SwiftCrypto
+        product: Crypto
+      - package: SwiftCrypto
+        product: CryptoExtras
+      - package: SwiftASN1
+        product: SwiftASN1
+      - package: AnisetteKit
+        product: AnisetteKit
+      - package: GSACryptoKit
+        product: GSACryptoKit
+      - package: CodeSignKit
+        product: CodeSignKit
     info:
       path: Info.plist
       properties:
