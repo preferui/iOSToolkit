@@ -110,6 +110,14 @@ actor DevAnisette {
     private var libsDir: URL { baseDir.appendingPathComponent("libs", isDirectory: true) }
     private var provisioningDir: URL { baseDir.appendingPathComponent("provisioning", isDirectory: true) }
 
+    /// Xoá dữ liệu "adi.pb" đã đăng ký với Apple (giữ lại 2 thư viện ADI đã tải —
+    /// không cần tải lại). Dùng khi nghi ngờ định danh thiết bị ảo cũ bị Apple từ
+    /// chối (ví dụ GrandSlam trả lỗi liên tục không rõ nguyên nhân).
+    func resetProvisioning() {
+        try? FileManager.default.removeItem(at: provisioningDir)
+        cachedClient = nil
+    }
+
     /// true nếu 2 thư viện ADI đã có sẵn trên máy (không cần tải lại).
     func isReady() -> Bool {
         AnisetteClient.validateLibrariesExist(at: libsDir, requiredLibraries: DevAnisetteConstants.requiredLibraryNames)

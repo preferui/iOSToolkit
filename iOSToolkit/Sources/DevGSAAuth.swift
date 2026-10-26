@@ -96,12 +96,13 @@ enum DevGSAAuth {
         }
 
         let clientDict = clientDictionary(anisetteHeaders: anisetteHeaders)
+        logAnisetteSummary(anisetteHeaders)
 
         // "init": gửi public key A, nhận lại salt + iterations + public key B của Apple
         let initRequest: [String: Any] = [
             "A2k": publicKeyA, "cpd": clientDict, "ps": ["s2k", "s2k_fo"], "o": "init", "u": appleID
         ]
-        let initResp = try await sendGrandSlam(initRequest, anisetteHeaders: anisetteHeaders)
+        let initResp = try await sendGrandSlam(initRequest, anisetteHeaders: anisetteHeaders, step: "init")
 
         guard let c = initResp["c"] as? String,
               let salt = initResp["s"] as? Data,
@@ -127,7 +128,7 @@ enum DevGSAAuth {
         let completeRequest: [String: Any] = [
             "c": c, "cpd": clientDict, "M1": m1, "o": "complete", "u": appleID
         ]
-        let completeResp = try await sendGrandSlam(completeRequest, anisetteHeaders: anisetteHeaders)
+        let completeResp = try await sendGrandSlam(completeRequest, anisetteHeaders: anisetteHeaders, step: "complete")
 
         guard let spd = completeResp["spd"] as? Data else { throw DevGSAError.missingField("spd") }
         guard let m2 = completeResp["M2"] as? Data else { throw DevGSAError.missingField("M2") }
@@ -225,7 +226,7 @@ enum DevGSAAuth {
             "cpd": clientDictionary(anisetteHeaders: anisetteHeaders),
             "o": "apptokens", "t": idmsToken, "u": dsid
         ]
-        let resp = try await sendGrandSlam(request, anisetteHeaders: anisetteHeaders)
+        let resp = try await sendGrandSlam(request, anisetteHeaders: anisetteHeaders, step: "apptokens")
         guard let encryptedToken = resp["et"] as? Data, encryptedToken.count > 35 else {
             throw DevGSAError.missingField("et")
         }
@@ -273,7 +274,7 @@ enum DevGSAAuth {
         ]
     }
 
-    private static func sendGrandSlam(_ requestParams: [String: Any], anisetteHeaders: [String: String]) async throws -> [String: Any] {
+    private static func sendGrandSlam(_ requestParams: [String: Any], anisetteHeaders: [String: String], step: String) async throws -> [String: Any] {
         let full: [String: Any] = ["Header": ["Version": "1.0.1"], "Request": requestParams]
         let plistData = try PropertyListSerialization.data(fromPropertyList: full, format: .xml, options: 0)
 
@@ -291,23 +292,44 @@ enum DevGSAAuth {
         do {
             (data, resp) = try await URLSession.shared.data(for: req)
         } catch {
+            Diag.log("DevGSA[\(step)]: lỗi mạng — \(error.localizedDescription)")
             throw DevGSAError.network(error)
         }
-        guard !data.isEmpty else { throw DevGSAError.badServerResponse("phản hồi rỗng") }
-        guard let full = parsePlist(data) else { throw DevGSAError.badServerResponse("không phải plist/JSON hợp lệ") }
+        let httpStatus = (resp as? HTTPURLResponse)?.statusCode ?? -1
+        guard !data.isEmpty else {
+            Diag.log("DevGSA[\(step)]: phản hồi rỗng (HTTP \(httpStatus))")
+            throw DevGSAError.badServerResponse("phản hồi rỗng (HTTP \(httpStatus))")
+        }
+        guard let full = parsePlist(data) else {
+            let raw = String(data: data.prefix(500), encoding: .utf8) ?? "<không giải mã được>"
+            Diag.log("DevGSA[\(step)]: không phải plist hợp lệ (HTTP \(httpStatus)): \(raw)")
+            throw DevGSAError.badServerResponse("không phải plist/JSON hợp lệ (HTTP \(httpStatus))")
+        }
         let dict = (full["Response"] as? [String: Any]) ?? full
 
         if let status = dict["Status"] as? [String: Any], let ec = status["ec"] as? Int, ec != 0 {
             let em = status["em"] as? String
+            Diag.log("DevGSA[\(step)]: Apple trả lỗi ec=\(ec) em=\(em ?? "?") — toàn bộ Status: \(status)")
             switch ec {
             case -22406: throw DevGSAError.incorrectCredentials(em)
             case -20101, -20209: throw DevGSAError.appSpecificPasswordRequired
             case -21669: throw DevGSAError.incorrectVerificationCode(em)
-            default: throw DevGSAError.badServerResponse("mã lỗi Apple \(ec): \(em ?? "?")")
+            default: throw DevGSAError.badServerResponse("[\(step)] mã lỗi Apple \(ec): \(em ?? "?")")
             }
         }
-        _ = resp
+        Diag.log("DevGSA[\(step)]: OK (HTTP \(httpStatus))")
         return dict
+    }
+
+    private static func logAnisetteSummary(_ h: [String: String]) {
+        func present(_ k: String) -> String { (h[k]?.isEmpty == false) ? "có (\(h[k]!.count) ký tự)" : "THIẾU" }
+        Diag.log("""
+        DevGSA: anisette headers — \
+        MD=\(present("X-Apple-I-MD")) MD-M=\(present("X-Apple-I-MD-M")) \
+        Device-Id=\(present("X-Mme-Device-Id")) MD-LU=\(present("X-Apple-I-MD-LU")) \
+        RINFO=\(present("X-Apple-I-MD-RINFO")) SRL-NO=\(present("X-Apple-I-SRL-NO")) \
+        Client-Time=\(present("X-Apple-I-Client-Time")) Client-Info=\(present("X-Mme-Client-Info"))
+        """)
     }
 
     private static func twoFactorRequest(url: URL, context: DevTwoFactorContext) -> URLRequest {

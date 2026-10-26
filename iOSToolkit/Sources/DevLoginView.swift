@@ -49,6 +49,11 @@ struct DevLoginView: View {
                 credentialsSection
                 if case .error(let msg) = stage {
                     Section { Text(msg).foregroundColor(.red).font(.footnote) }
+                    Section {
+                        Button("Đặt lại dữ liệu anisette rồi thử lại") { resetAnisetteAndRetry() }
+                    } footer: {
+                        Text("Dùng nếu đăng nhập liên tục báo lỗi không rõ nguyên nhân từ Apple — xoá định danh thiết bị ảo cũ (không cần tải lại thư viện).")
+                    }
                 }
                 Section {
                     Button("Đăng nhập") { startLogin() }
@@ -152,6 +157,14 @@ struct DevLoginView: View {
                 Diag.log("DevLogin lỗi: \(error.localizedDescription)")
                 await setStage(.error(error.localizedDescription))
             }
+        }
+    }
+
+    private func resetAnisetteAndRetry() {
+        Task {
+            await DevAnisette.shared.resetProvisioning()
+            Diag.log("DevLogin: đã đặt lại dữ liệu anisette, thử đăng nhập lại")
+            startLogin()
         }
     }
 
