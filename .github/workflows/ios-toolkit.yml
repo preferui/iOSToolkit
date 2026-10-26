@@ -34,9 +34,15 @@ jobs:
         run: |
           set +e
           cd iOSToolkit
-          xcodegen generate
+          xcodegen generate 2>&1 | tee ../xcodegen.log
+          gen_rc=${PIPESTATUS[0]}
+          if [ $gen_rc -ne 0 ] || [ ! -d iOSToolkit.xcodeproj ]; then
+            while IFS= read -r l; do echo "::error::xcodegen: ${l:0:400}"; done < ../xcodegen.log
+            exit 1
+          fi
           mkdir -p iOSToolkit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm
-          cp Package.resolved iOSToolkit.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          # project.yml đổi thêm gói mới trên nhánh này -> Package.resolved cũ không còn khớp,
+          # để trống cho SwiftPM tự giải lại từ đầu thay vì copy bản cũ gây lệch pin.
           xcodebuild -project iOSToolkit.xcodeproj -scheme iOSToolkit -configuration Release \
             -derivedDataPath ../build -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
