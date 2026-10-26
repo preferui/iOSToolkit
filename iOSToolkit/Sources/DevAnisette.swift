@@ -115,6 +115,9 @@ actor DevAnisette {
     /// chối (ví dụ GrandSlam trả lỗi liên tục không rõ nguyên nhân).
     func resetProvisioning() {
         try? FileManager.default.removeItem(at: provisioningDir)
+        // Thư viện ADI gốc cần thư mục này tồn tại sẵn để ghi trạng thái "thiết bị ảo"
+        // của nó khi cấp phát lại — xoá xong phải tạo lại ngay, không để trống.
+        try? FileManager.default.createDirectory(at: provisioningDir, withIntermediateDirectories: true)
         cachedClient = nil
     }
 
