@@ -169,14 +169,9 @@ struct DevLoginView: View {
     }
 
     private func loadAnisetteWithProgress() async throws -> [String: String] {
-        let ready = await DevAnisette.shared.isReady()
-        if !ready {
-            await setStage(.working("Đang tải thư viện anisette (chỉ lần đầu)…"))
-            try await DevAnisette.shared.ensureLibrariesDownloaded { msg in
-                Task { await self.setStage(.working(msg)) }
-            }
+        try await DevAnisette.shared.fetchHeaders { msg in
+            Task { await self.setStage(.working(msg)) }
         }
-        return try await DevAnisette.shared.fetchHeaders()
     }
 
     private func requestCode(channel: DevTwoFactorChannel) {

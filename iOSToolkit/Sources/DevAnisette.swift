@@ -16,6 +16,15 @@
 //   - Dữ liệu "adi.pb" (định danh thiết bị ảo sau khi đăng ký với Apple) được lưu lại
 //     trong thư mục Documents của app để lần sau không phải đăng ký lại.
 //
+//  Lưu ý (phát hiện khi gỡ lỗi lỗi -80045 từ Apple, cuối 10/2026): gói thư viện ADI
+//  tải qua ODA cộng đồng thực chất mô phỏng kiểu thiết bị Android, trong khi
+//  AnisetteKit mặc định lại gắn chuỗi "X-Mme-Client-Info" kiểu Mac vào header gửi đi.
+//  Từ giữa 10/2026 Apple bắt đầu đối chiếu 2 thứ này và chặn khi lệch nhau (lỗi cộng
+//  đồng SideStore/AltStore/iLoader đang gặp chung, không phải lỗi riêng của code này).
+//  Vì vậy ở đây ưu tiên lấy thẳng bộ header đã hoàn chỉnh (tự khớp nhau) từ một máy
+//  chủ anisette cộng đồng (chế độ "v1" — trả JSON header trực tiếp), chỉ rơi về sinh
+//  tại chỗ bằng AnisetteKit khi không máy chủ nào phản hồi được.
+//
 //  Toàn bộ phần gọi mạng/giải nén ở file này là code tự viết, chỉ tham khảo các hằng
 //  số/URL công khai (địa chỉ máy chủ cộng đồng) chứ không copy mã nguồn của ai.
 //
@@ -32,6 +41,16 @@ enum DevAnisetteConstants {
     static let fallbackODAMetadataURL = URL(string: "https://zzz.haus/oda.json")!
 
     static let requiredLibraryNames = AnisetteConstants.Libraries.requiredNames // libstoreservicescore.so, libCoreADI.so
+
+    // Máy chủ anisette cộng đồng hỗ trợ kiểu "v1" (GET thẳng vào gốc trả về JSON
+    // header đã hoàn chỉnh, tự khớp nhau) — thử lần lượt, cái nào phản hồi hợp lệ
+    // trước thì dùng cái đó. Đây đều là địa chỉ công khai của cộng đồng SideStore/
+    // AltStore, không phải máy chủ riêng.
+    static let remoteHeaderServers = [
+        "https://ani.sidestore.io",
+        "https://ani2.stikstore.app",
+        "https://ani.jkcoxson.com",
+    ]
 }
 
 enum DevAnisetteError: LocalizedError {
@@ -160,14 +179,60 @@ actor DevAnisette {
         progress?("Đã sẵn sàng thư viện ADI.")
     }
 
-    /// Lấy bộ header anisette cho một "identifier" (UUID định danh thiết bị ảo — tự
-    /// sinh và lưu lại cố định cho app này, không liên quan UDID máy thật).
-    func fetchHeaders() async throws -> [String: String] {
-        try await ensureLibrariesDownloaded()
+    /// Lấy bộ header anisette. Ưu tiên lấy thẳng từ máy chủ cộng đồng (đã tự khớp
+    /// kiểu thiết bị bên trong với chuỗi client-info gửi đi); chỉ sinh tại chỗ bằng
+    /// AnisetteKit khi không máy chủ nào phản hồi được — vì sinh tại chỗ hiện đang
+    /// bị Apple chặn do lệch kiểu thiết bị (xem ghi chú đầu file).
+    func fetchHeaders(progress: (@Sendable (String) -> Void)? = nil) async throws -> [String: String] {
+        progress?("Đang lấy anisette từ máy chủ cộng đồng…")
+        if let remote = await fetchRemoteHeaders() {
+            return remote
+        }
+
+        progress?("Máy chủ cộng đồng không phản hồi — sinh anisette tại chỗ…")
+        try await ensureLibrariesDownloaded(progress: progress)
         let client = try obtainClient()
         let identifier = Self.persistentIdentifier()
         let (headers, _) = try await client.getAnisetteData(identifier: identifier, storage: .disk)
         return headers
+    }
+
+    /// Thử lần lượt các máy chủ anisette "v1" (GET gốc trả JSON header hoàn chỉnh).
+    /// Trả nil (không throw) nếu tất cả đều thất bại, để gọi nơi gọi tự rơi về sinh
+    /// tại chỗ thay vì phải phân biệt lỗi.
+    private func fetchRemoteHeaders() async -> [String: String]? {
+        for serverString in DevAnisetteConstants.remoteHeaderServers {
+            guard let url = URL(string: serverString) else { continue }
+            do {
+                var req = URLRequest(url: url)
+                req.cachePolicy = .reloadIgnoringLocalCacheData
+                req.timeoutInterval = 8
+                let (data, resp) = try await URLSession.shared.data(for: req)
+                guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                    Diag.log("DevAnisette: \(serverString) trả HTTP \((resp as? HTTPURLResponse)?.statusCode ?? -1)")
+                    continue
+                }
+                guard let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    Diag.log("DevAnisette: \(serverString) trả JSON không đọc được")
+                    continue
+                }
+                let json = raw.reduce(into: [String: String]()) { acc, pair in
+                    if let s = pair.value as? String { acc[pair.key] = s }
+                    else { acc[pair.key] = "\(pair.value)" }
+                }
+                guard let md = json["X-Apple-I-MD"], !md.isEmpty,
+                      let mdM = json["X-Apple-I-MD-M"], !mdM.isEmpty else {
+                    Diag.log("DevAnisette: \(serverString) trả JSON không hợp lệ/thiếu header")
+                    continue
+                }
+                Diag.log("DevAnisette: dùng header anisette từ \(serverString) (client-info: \(json["X-Mme-Client-Info"] ?? "?"))")
+                return json
+            } catch {
+                Diag.log("DevAnisette: \(serverString) lỗi — \(error.localizedDescription)")
+                continue
+            }
+        }
+        return nil
     }
 
     private func obtainClient() throws -> AnisetteClient {
