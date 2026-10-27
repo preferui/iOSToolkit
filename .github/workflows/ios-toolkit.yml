@@ -68,8 +68,8 @@ jobs:
             -derivedDataPath ../build -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
             build 2>&1 | tee ../build.log
-          grep -E "async-http-client|swift-nio|applepackage" ../build.log | grep -iE "resolved|checking out|Fetched" | sort -u | head -20
           rc=${PIPESTATUS[0]}
+          grep -E "async-http-client|swift-nio|applepackage" ../build.log | grep -iE "resolved|checking out|Fetched" | sort -u | head -20
           if [ $rc -ne 0 ]; then
             grep -E "error:|error " ../build.log | sort -u | head -40 > ../errors.txt || true
             while IFS= read -r l; do echo "::error::${l:0:400}"; done < ../errors.txt
@@ -79,6 +79,14 @@ jobs:
         run: |
           APP=$(find build -name "iOSToolkit.app" -path "*Release-iphoneos*" | head -1)
           echo "APP=$APP"
+          BIN="$APP/iOSToolkit"
+          if [ ! -x "$BIN" ]; then
+            echo "::error::Không thấy file thực thi $BIN trong app bundle — build coi như lỗi dù xcodebuild báo thành công."
+            find build -iname "iOSToolkit*" -maxdepth 6 2>/dev/null | head -40
+            tail -n 200 build.log 2>/dev/null || true
+            exit 1
+          fi
+          file "$BIN"
           mkdir -p ipa/Payload out
           cp -R "$APP" ipa/Payload/
           cd ipa && zip -qry ../out/iOSToolkit.ipa Payload
