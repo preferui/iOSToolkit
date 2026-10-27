@@ -222,8 +222,15 @@ struct IPACloneToolView: View {
                         ShareLink(items: exportURLs) {
                             Label(exportURLs.count > 1 ? "Lưu/chia sẻ \(exportURLs.count) bản IPA" : "Lưu/chia sẻ bản IPA", systemImage: "square.and.arrow.up")
                         }
+                        if SignStore.hasAny(), let first = exportURLs.first {
+                            NavigationLink { SignToolView(initialIPA: first) } label: {
+                                Label("Chuyển qua phần ký", systemImage: "signature")
+                            }
+                        }
                     } footer: {
-                        Text("Chọn “Lưu vào Tệp” trong hộp chia sẻ để lưu lại, rồi tự ký bằng công cụ bạn đang dùng (ví dụ TrollStore Lite).")
+                        Text(SignStore.hasAny()
+                            ? "Có thể ký ngay bằng chứng chỉ đã nhập, hoặc lưu bản IPA chưa ký để tự ký bằng công cụ khác."
+                            : "Chọn “Lưu vào Tệp” trong hộp chia sẻ để lưu lại, rồi tự ký bằng công cụ bạn đang dùng (ví dụ TrollStore Lite), hoặc vào mục “Ký IPA” để nhập chứng chỉ và ký ngay trong app.")
                     }
                 }
             }

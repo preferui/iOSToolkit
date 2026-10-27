@@ -20,6 +20,9 @@ targets:
     sources:
       - Sources
       - Assets.xcassets
+      - path: zsign/src
+        excludes:
+          - "**/*.md"
     dependencies:
       - package: ApplePackage
         product: ApplePackage
@@ -50,3 +53,47 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/iOSToolkit-Bridging-Header.h
+        CLANG_CXX_LANGUAGE_STANDARD: "gnu++17"
+        CLANG_CXX_LIBRARY: "libc++"
+        GCC_WARN_INHIBIT_ALL_WARNINGS: YES
+        GCC_TREAT_WARNINGS_AS_ERRORS: NO
+        HEADER_SEARCH_PATHS:
+          - zsign/src
+          - zsign/src/common
+          - zsign/src/third-party/zlib
+          - zsign/src/third-party/minizip
+          - zsign/openssl/include
+        LIBRARY_SEARCH_PATHS:
+          - zsign/openssl/lib
+        OTHER_LDFLAGS:
+          - -lcrypto
+        OTHER_CPLUSPLUSFLAGS:
+          - -std=gnu++17
+          - -w
+          - -include
+          - cstdint
+          - -include
+          - cstring
+          - -include
+          - cstdlib
+          - -include
+          - cstdio
+          - -include
+          - string
+          - -include
+          - vector
+          - -include
+          - map
+          - -include
+          - set
+          - -include
+          - functional
+          - -include
+          - algorithm
+          - -include
+          - memory
+          - -include
+          - sstream
+        OTHER_CFLAGS:
+          - -w

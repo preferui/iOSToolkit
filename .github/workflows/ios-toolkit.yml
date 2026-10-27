@@ -29,6 +29,33 @@ jobs:
         run: |
           xcodebuild -downloadPlatform iOS || true
           brew install xcodegen
+      - name: OpenSSL cho iOS (dùng cho zsign)
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch openssl-3.3.2 https://github.com/openssl/openssl.git "$HOME/openssl-src"
+          cd "$HOME/openssl-src"
+          ./Configure ios64-xcrun no-shared no-tests no-apps no-ui-console no-dso enable-legacy -miphoneos-version-min=15.0 --prefix="$HOME/openssl-out"
+          make -j"$(sysctl -n hw.ncpu)" build_libs
+          mkdir -p "$GITHUB_WORKSPACE/iOSToolkit/zsign/openssl/lib" "$GITHUB_WORKSPACE/iOSToolkit/zsign/openssl/include"
+          cp libcrypto.a "$GITHUB_WORKSPACE/iOSToolkit/zsign/openssl/lib/"
+          cp -R include/openssl "$GITHUB_WORKSPACE/iOSToolkit/zsign/openssl/include/"
+          ls -la "$GITHUB_WORKSPACE/iOSToolkit/zsign/openssl/lib"
+      - name: Tải mã nguồn zsign và vá cho iOS
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/zhlynn/zsign.git "$HOME/zsign-src"
+          Z="$HOME/zsign-src/src"
+          perl -pi -e 's/^int main\(int argc, char\* argv\[\]\)/int zsign_main(int argc, char* argv[])/' "$Z/zsign.cpp"
+          perl -pi -e 's/pid_t pid = fork\(\);/pid_t pid = -1;/; s/^\s*execlp\(.*$//' "$Z/zsign.cpp"
+          grep -n "zsign_main" "$Z/zsign.cpp" | head -2
+          DEST="$GITHUB_WORKSPACE/iOSToolkit/zsign/src"
+          mkdir -p "$DEST/common" "$DEST/third-party/zlib" "$DEST/third-party/minizip"
+          cp "$Z"/*.cpp "$Z"/*.h "$DEST/" 2>/dev/null || true
+          cp "$Z"/common/*.cpp "$Z"/common/*.h "$DEST/common/" 2>/dev/null || true
+          cp "$Z"/third-party/zlib/*.c "$Z"/third-party/zlib/*.h "$DEST/third-party/zlib/" 2>/dev/null || true
+          cp "$Z"/third-party/minizip/ioapi.c "$Z"/third-party/minizip/unzip.c "$Z"/third-party/minizip/zip.c "$Z"/third-party/minizip/mztools.c "$DEST/third-party/minizip/" 2>/dev/null || true
+          cp "$Z"/third-party/minizip/*.h "$DEST/third-party/minizip/" 2>/dev/null || true
+          find "$DEST" -type f | sort
       - name: Tạo project và build
         shell: bash
         run: |

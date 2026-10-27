@@ -24,7 +24,7 @@ struct RootView: View {
         Tool(title: "Tải IPA từ App Store", subtitle: "Tải app theo ID bằng Apple ID của bạn, kể cả app đã bị gỡ nếu tài khoản từng nhận", icon: "arrow.down.app.fill", color: .blue, ready: true),
         Tool(title: "Đổi mật khẩu P12", subtitle: "Chọn gói zip chứng chỉ, nhập mật khẩu cũ và mới, ghi đè thẳng vào gói zip", icon: "key.fill", color: .green, ready: true, kind: 1),
         Tool(title: "Nhân bản / Edit IPA", subtitle: "Đổi Bundle ID, tên, icon — tạo nhiều bản cài song song từ 1 IPA", icon: "rectangle.on.rectangle", color: .teal, ready: true, kind: 2),
-        Tool(title: "Ký IPA", subtitle: "Sắp có", icon: "signature", color: .purple, ready: false),
+        Tool(title: "Ký IPA", subtitle: "Ký IPA bằng chứng chỉ .p12 + .mobileprovision của bạn (dùng zsign)", icon: "signature", color: .purple, ready: true, kind: 3),
         Tool(title: "Công cụ khác", subtitle: "Sắp có", icon: "wrench.and.screwdriver.fill", color: .orange, ready: false),
     ]
 
@@ -37,6 +37,7 @@ struct RootView: View {
                             NavigationLink {
                                 if tool.kind == 1 { P12ToolView() }
                                 else if tool.kind == 2 { IPACloneToolView() }
+                                else if tool.kind == 3 { SignToolView() }
                                 else { AppStoreToolView() }
                             } label: { row(tool) }
                         } else {
