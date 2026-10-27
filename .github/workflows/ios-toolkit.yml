@@ -69,7 +69,7 @@ jobs:
           rc=${PIPESTATUS[0]}
           grep -E "async-http-client|swift-nio|applepackage" ../build.log | grep -iE "resolved|checking out|Fetched" | sort -u | head -20
           if [ $rc -ne 0 ]; then
-            grep -E "error:|error " ../build.log | sort -u | head -40 > ../errors.txt || true
+            { grep -E "error:|error " ../build.log; grep -A 30 -E "Undefined symbol|duplicate symbol|ld: " ../build.log; } | sort -u | head -80 > ../errors.txt || true
             while IFS= read -r l; do echo "::error::${l:0:400}"; done < ../errors.txt
             exit $rc
           fi
