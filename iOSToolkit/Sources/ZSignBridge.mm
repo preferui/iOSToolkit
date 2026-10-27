@@ -4,8 +4,10 @@
 
 // zsign.cpp đã được vá sẵn trong CI: đổi "int main(...)" thành "int zsign_main(...)"
 // để không đụng main() của chính app, và vô hiệu hoá đoạn fork()/execlp() không dùng được
-// trong sandbox của iOS.
-extern "C" int zsign_main(int argc, char *argv[]);
+// trong sandbox của iOS. KHÔNG bọc extern "C" ở đây: zsign.cpp là C++ thuần (không có
+// extern "C" trong định nghĩa thật), nên khai báo ở đây cũng phải là C++ thuần (không có
+// extern "C") để linker khớp đúng tên đã bị mangle — khác với ZSignRun ở trên.
+int zsign_main(int argc, char *argv[]);
 
 int ZSignRun(NSArray<NSString *> *args, void (^log)(NSString *line)) {
     static NSLock *lock;
