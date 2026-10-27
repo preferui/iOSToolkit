@@ -29,17 +29,6 @@ jobs:
         run: |
           xcodebuild -downloadPlatform iOS || true
           brew install xcodegen
-      - name: OpenSSL cho iOS (dùng cho zsign)
-        run: |
-          set -euo pipefail
-          git clone --depth 1 --branch openssl-3.3.2 https://github.com/openssl/openssl.git "$HOME/openssl-src"
-          cd "$HOME/openssl-src"
-          ./Configure ios64-xcrun no-shared no-tests no-apps no-ui-console no-dso enable-legacy -miphoneos-version-min=15.0 --prefix="$HOME/openssl-out"
-          make -j"$(sysctl -n hw.ncpu)" build_libs
-          mkdir -p "$GITHUB_WORKSPACE/iOSToolkit/zsign/openssl/lib" "$GITHUB_WORKSPACE/iOSToolkit/zsign/openssl/include"
-          cp libcrypto.a "$GITHUB_WORKSPACE/iOSToolkit/zsign/openssl/lib/"
-          cp -R include/openssl "$GITHUB_WORKSPACE/iOSToolkit/zsign/openssl/include/"
-          ls -la "$GITHUB_WORKSPACE/iOSToolkit/zsign/openssl/lib"
       - name: Tải mã nguồn zsign và vá cho iOS
         run: |
           set -euo pipefail
@@ -56,6 +45,15 @@ jobs:
           cp "$Z"/third-party/minizip/ioapi.c "$Z"/third-party/minizip/unzip.c "$Z"/third-party/minizip/zip.c "$Z"/third-party/minizip/mztools.c "$DEST/third-party/minizip/" 2>/dev/null || true
           cp "$Z"/third-party/minizip/*.h "$DEST/third-party/minizip/" 2>/dev/null || true
           find "$DEST" -type f | sort
+      - name: Lấy header OpenSSL (dùng chung thư viện OpenSSL đã có sẵn trong app, không build/link thêm bản riêng để tránh trùng symbol)
+        run: |
+          set -euo pipefail
+          curl -sS -L -o "$HOME/libssl.xcframework.zip" "https://github.com/Lakr233/openssl-spm/releases/download/storage.4.0.1/libssl.xcframework.zip"
+          mkdir -p "$HOME/libssl-xc"
+          unzip -q "$HOME/libssl.xcframework.zip" "OpenSSL.Package.xcframework/ios-arm64_arm64e/*" -d "$HOME/libssl-xc"
+          mkdir -p "$GITHUB_WORKSPACE/iOSToolkit/zsign/openssl/include"
+          cp -R "$HOME/libssl-xc/OpenSSL.Package.xcframework/ios-arm64_arm64e/libssl.framework/Headers/openssl" "$GITHUB_WORKSPACE/iOSToolkit/zsign/openssl/include/"
+          ls "$GITHUB_WORKSPACE/iOSToolkit/zsign/openssl/include/openssl" | wc -l
       - name: Tạo project và build
         shell: bash
         run: |

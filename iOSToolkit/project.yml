@@ -64,10 +64,6 @@ targets:
           - zsign/src/third-party/zlib
           - zsign/src/third-party/minizip
           - zsign/openssl/include
-        LIBRARY_SEARCH_PATHS:
-          - zsign/openssl/lib
-        OTHER_LDFLAGS:
-          - -lcrypto
         OTHER_CPLUSPLUSFLAGS:
           - -std=gnu++17
           - -w
