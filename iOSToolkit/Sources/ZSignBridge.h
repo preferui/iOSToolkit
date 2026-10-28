@@ -16,6 +16,11 @@ int ZSignRun(NSArray<NSString *> *args, void (^ _Nullable log)(NSString *line));
 // bị lỗi khi zsign báo "Unzip failed".
 NSString *ZSignProbeZip(NSString *path);
 
+// Chẩn đoán sâu hơn: thử giải nén TOÀN BỘ file zip ra một thư mục tạm thật (y hệt cách
+// archive.cpp của zsign làm — tạo thư mục, mở từng mục, đọc rồi ghi ra), dừng lại và báo rõ
+// mục nào/bước nào lỗi đầu tiên (kèm errno) thay vì chỉ nói chung chung "Unzip failed".
+NSString *ZSignProbeExtract(NSString *path, NSString *outDir);
+
 #ifdef __cplusplus
 }
 #endif
