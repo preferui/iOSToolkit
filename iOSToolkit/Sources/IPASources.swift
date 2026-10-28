@@ -7,128 +7,175 @@ private struct IPASource: Identifiable, Codable, Equatable {
     var url: String
 }
 
+private struct RepoApp: Identifiable {
+    var id: String { "\(name)|\(version)|\(downloadURL)" }
+    let name: String
+    let version: String
+    let description: String
+    let iconURL: URL?
+    let downloadURL: URL
+
+    init?(json: [String: Any], baseURL: URL) {
+        guard let name = json["name"] as? String, !name.isEmpty else { return nil }
+        let version = json["version"] as? String ?? ""
+        let description = json["localizedDescription"] as? String ?? json["subtitle"] as? String ?? ""
+        let rawDownload = (json["downloadURL"] as? String) ?? (json["down"] as? String) ?? (json["url"] as? String) ?? ""
+        guard let download = URL(string: rawDownload, relativeTo: baseURL)?.absoluteURL,
+              ["http", "https"].contains(download.scheme?.lowercased() ?? ""),
+              download.pathExtension.lowercased() == "ipa" else { return nil }
+        self.name = name
+        self.version = version
+        self.description = description
+        let rawIcon = (json["iconURL"] as? String) ?? (json["icon"] as? String) ?? ""
+        self.iconURL = URL(string: rawIcon, relativeTo: baseURL)?.absoluteURL
+        self.downloadURL = download
+    }
+}
+
 struct IPASourcesView: View {
+    var onDownloaded: (URL) -> Void
+
+    @Environment(\.dismiss) private var dismiss
     @AppStorage("ioskit.ipa.sources.v1") private var savedSources = ""
     @State private var sources: [IPASource] = []
-    @State private var selectedID: UUID?
-    @State private var newName = ""
-    @State private var newURL = ""
+    @State private var activeSource: IPASource?
+    @State private var apps: [RepoApp] = []
     @State private var searchText = ""
-    @State private var ipaLinks: [URL] = []
-    @State private var isLoading = false
+    @State private var newURL = ""
+    @State private var loading = false
+    @State private var downloadingID: String?
     @State private var message = ""
 
-    private let defaultURL = "https://repository.apptesters.org"
+    private let defaultURL = "https://repository.apptesters.org/"
 
-    private var selectedSource: IPASource? {
-        sources.first(where: { $0.id == selectedID }) ?? sources.first
-    }
-
-    private var filteredLinks: [URL] {
-        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return ipaLinks }
-        return ipaLinks.filter { $0.absoluteString.localizedCaseInsensitiveContains(searchText) }
+    private var visibleApps: [RepoApp] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return apps }
+        return apps.filter { $0.name.localizedCaseInsensitiveContains(query) || $0.description.localizedCaseInsensitiveContains(query) || $0.version.localizedCaseInsensitiveContains(query) }
     }
 
     var body: some View {
         List {
-            Section("Nguồn hiện tại") {
-                if sources.isEmpty {
-                    Text("Chưa có nguồn IPA").foregroundStyle(.secondary)
-                } else {
-                    ForEach(sources) { source in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(source.name).font(.headline)
-                                Text(source.url).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                            }
-                            Spacer()
-                            if selectedID == source.id {
-                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.tint)
-                            }
-                            Button(role: .destructive) {
-                                remove(source)
-                            } label: {
-                                Image(systemName: "trash")
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            selectedID = source.id
-                            ipaLinks = []
-                            message = ""
-                        }
-                    }
-                }
-            }
-
-            Section("Thêm nguồn") {
-                TextField("Tên nguồn", text: $newName)
-                    .textInputAutocapitalization(.never)
-                TextField("https://example.com", text: $newURL)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                Button("Thêm nguồn") { addSource() }
-                    .disabled(newURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-
-            Section {
-                Button {
-                    Task { await loadLinks() }
-                } label: {
+            if let activeSource {
+                Section {
                     HStack {
-                        if isLoading { ProgressView() }
-                        Text(isLoading ? "Đang tìm liên kết IPA…" : "Tìm IPA trong nguồn đã chọn")
+                        Button {
+                            self.activeSource = nil
+                            apps = []
+                            message = ""
+                        } label: {
+                            Label("Tất cả nguồn", systemImage: "chevron.left")
+                        }
+                        Spacer()
+                        Text(activeSource.name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
-                .disabled(isLoading || selectedSource == nil)
-
-                if !message.isEmpty {
-                    Text(message).font(.footnote).foregroundStyle(.secondary)
+                Section {
+                    if loading && apps.isEmpty {
+                        HStack { ProgressView(); Text("Đang tải danh sách ứng dụng…").foregroundStyle(.secondary) }
+                    } else if visibleApps.isEmpty {
+                        Text(searchText.isEmpty ? "Nguồn chưa có ứng dụng IPA tương thích hoặc định dạng JSON chưa được hỗ trợ." : "Không tìm thấy ứng dụng phù hợp.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(visibleApps) { app in
+                            Button {
+                                Task { await download(app) }
+                            } label: {
+                                HStack(spacing: 12) {
+                                    AsyncImage(url: app.iconURL) { image in
+                                        image.resizable().scaledToFill()
+                                    } placeholder: {
+                                        Image(systemName: "app.dashed").resizable().scaledToFit().padding(10).foregroundStyle(.secondary)
+                                    }
+                                    .frame(width: 48, height: 48)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(app.name).font(.headline).foregroundStyle(.primary)
+                                        if !app.version.isEmpty {
+                                            Text("Phiên bản \(app.version)").font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        if !app.description.isEmpty {
+                                            Text(app.description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                        }
+                                    }
+                                    Spacer(minLength: 4)
+                                    if downloadingID == app.id {
+                                        ProgressView()
+                                    } else {
+                                        Image(systemName: "arrow.down.circle.fill").font(.title2).foregroundStyle(.tint)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(downloadingID != nil)
+                        }
+                    }
+                } header: {
+                    Text("Ứng dụng (\(visibleApps.count))")
                 }
-            } header: {
-                Text("Tìm kiếm thủ công")
-            } footer: {
-                Text("Không tự tải toàn bộ kho. Chỉ quét trang HTML khi bạn bấm tìm; tối đa hiển thị 40 liên kết IPA tìm thấy.")
-            }
-
-            if !ipaLinks.isEmpty {
-                Section("Liên kết IPA (\(filteredLinks.count))") {
-                    TextField("Lọc theo tên hoặc URL", text: $searchText)
+            } else {
+                Section("Nguồn IPA") {
+                    ForEach(sources) { source in
+                        Button {
+                            Task { await open(source) }
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(source.name).font(.headline).foregroundStyle(.primary)
+                                    Text(source.url).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                            }
+                        }
+                        .disabled(loading)
+                        .swipeActions {
+                            Button(role: .destructive) { remove(source) } label: {
+                                Label("Xoá", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+                Section("Thêm nguồn JSON") {
+                    TextField("https://example.com/repo.json", text: $newURL)
+                        .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                    ForEach(filteredLinks, id: \.absoluteString) { url in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(url.lastPathComponent.isEmpty ? url.absoluteString : url.lastPathComponent)
-                                .font(.subheadline)
-                                .lineLimit(2)
-                            ShareLink(item: url) {
-                                Label("Mở / chia sẻ liên kết", systemImage: "arrow.up.right.square")
-                                    .font(.caption)
-                            }
+                    Button {
+                        Task { await addSource() }
+                    } label: {
+                        HStack {
+                            Text(loading ? "Đang kiểm tra nguồn…" : "Thêm nguồn")
+                            if loading { Spacer(); ProgressView() }
                         }
-                        .padding(.vertical, 3)
                     }
+                    .disabled(loading || newURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+
+            if !message.isEmpty {
+                Section { Text(message).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled) }
+            }
         }
-        .navigationTitle("Nguồn IPA")
+        .searchable(text: $searchText, prompt: activeSource == nil ? "Tìm nguồn IPA" : "Tìm ứng dụng")
+        .navigationTitle(activeSource?.name ?? "Nguồn IPA")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Đóng") { dismiss() }
+            }
+        }
         .onAppear(perform: loadSavedSources)
     }
 
     private func loadSavedSources() {
         if let data = savedSources.data(using: .utf8),
-           let decoded = try? JSONDecoder().decode([IPASource].self, from: data),
-           !decoded.isEmpty {
+           let decoded = try? JSONDecoder().decode([IPASource].self, from: data), !decoded.isEmpty {
             sources = decoded
         } else {
             sources = [IPASource(name: "AppTesters", url: defaultURL)]
             persist()
-        }
-        if selectedID == nil || !sources.contains(where: { $0.id == selectedID }) {
-            selectedID = sources.first?.id
         }
     }
 
@@ -138,80 +185,96 @@ struct IPASourcesView: View {
         savedSources = string
     }
 
-    private func addSource() {
+    private func remove(_ source: IPASource) {
+        sources.removeAll { $0.id != source.id }
+        persist()
+    }
+
+    private func addSource() async {
         let raw = newURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalized = raw.contains("://") ? raw : "https://" + raw
-        guard let url = URL(string: normalized),
-              let scheme = url.scheme?.lowercased(),
-              ["http", "https"].contains(scheme),
-              url.host != nil else {
+        guard let url = URL(string: normalized), let host = url.host,
+              ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
             message = "URL nguồn không hợp lệ."
             return
         }
         guard !sources.contains(where: { $0.url.caseInsensitiveCompare(url.absoluteString) == .orderedSame }) else {
-            message = "Nguồn này đã tồn tại."
+            message = "Nguồn này đã được thêm."
             return
         }
-        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let source = IPASource(name: name.isEmpty ? (url.host ?? "Nguồn IPA") : name, url: url.absoluteString)
-        sources.append(source)
-        selectedID = source.id
-        newName = ""
-        newURL = ""
-        ipaLinks = []
-        message = "Đã thêm nguồn."
-        persist()
-    }
-
-    private func remove(_ source: IPASource) {
-        sources.removeAll { $0.id == source.id }
-        if selectedID == source.id { selectedID = sources.first?.id }
-        ipaLinks = []
-        persist()
-        if sources.isEmpty {
-            sources = [IPASource(name: "AppTesters", url: defaultURL)]
-            selectedID = sources.first?.id
+        loading = true
+        message = ""
+        defer { loading = false }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let root = try JSONSerialization.jsonObject(with: data)
+            guard let object = root as? [String: Any] else {
+                message = "JSON nguồn không đúng định dạng."
+                return
+            }
+            let name = (object["name"] as? String) ?? (object["repoName"] as? String) ?? host
+            sources.append(IPASource(name: name, url: url.absoluteString))
             persist()
+            newURL = ""
+            message = "Đã thêm nguồn \(name)."
+        } catch {
+            message = "Không đọc được JSON nguồn: \(error.localizedDescription)"
         }
     }
 
     @MainActor
-    private func loadLinks() async {
-        guard let source = selectedSource, let url = URL(string: source.url) else { return }
-        isLoading = true
+    private func open(_ source: IPASource) async {
+        activeSource = source
+        apps = []
+        loading = true
         message = ""
-        ipaLinks = []
-        defer { isLoading = false }
+        defer { loading = false }
+        guard let url = URL(string: source.url) else {
+            message = "URL nguồn không hợp lệ."
+            return
+        }
         do {
             var request = URLRequest(url: url)
-            request.timeoutInterval = 20
-            request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+            request.timeoutInterval = 30
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
             let (data, response) = try await URLSession.shared.data(for: request)
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                message = "Máy chủ trả về mã HTTP \(http.statusCode)."
+                message = "Máy chủ trả về HTTP \(http.statusCode)."
                 return
             }
-            guard let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
-                message = "Không đọc được nội dung trang."
+            let root = try JSONSerialization.jsonObject(with: data)
+            guard let object = root as? [String: Any], let rawApps = object["apps"] as? [[String: Any]] else {
+                message = "JSON không có danh sách apps hợp lệ."
                 return
             }
-            let pattern = #"(?i)href\s*=\s*["']([^"']+\.ipa(?:\?[^"']*)?)["']"#
-            let regex = try NSRegularExpression(pattern: pattern)
-            let range = NSRange(html.startIndex..<html.endIndex, in: html)
-            var found: [URL] = []
-            for match in regex.matches(in: html, range: range) {
-                guard let r = Range(match.range(at: 1), in: html) else { continue }
-                let rawLink = String(html[r]).replacingOccurrences(of: "&amp;", with: "&")
-                let resolved = URL(string: rawLink, relativeTo: url)?.absoluteURL
-                if let resolved, !found.contains(resolved) { found.append(resolved) }
-                if found.count >= 40 { break }
+            apps = rawApps.compactMap { RepoApp(json: $0, baseURL: url) }
+            if apps.isEmpty {
+                message = "Đã đọc JSON nhưng không tìm thấy mục nào có liên kết IPA trực tiếp."
             }
-            ipaLinks = found
-            message = found.isEmpty
-                ? "Không tìm thấy liên kết .ipa trực tiếp trên trang này. Nếu nguồn dùng API hoặc trang danh mục động, cần bổ sung bộ phân tích riêng."
-                : "Tìm thấy \(found.count) liên kết IPA."
         } catch {
-            message = "Không thể tải nguồn: \(error.localizedDescription)"
+            message = "Không tải được danh sách ứng dụng: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func download(_ app: RepoApp) async {
+        downloadingID = app.id
+        message = ""
+        defer { downloadingID = nil }
+        do {
+            var request = URLRequest(url: app.downloadURL)
+            request.timeoutInterval = 120
+            let (temporaryURL, response) = try await URLSession.shared.download(for: request)
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                message = "Không tải được IPA (HTTP \(http.statusCode))."
+                return
+            }
+            let destination = FileManager.default.temporaryDirectory
+                .appendingPathComponent("Source-\(UUID().uuidString)-\(app.name.replacingOccurrences(of: "/", with: "-")).ipa")
+            try FileManager.default.moveItem(at: temporaryURL, to: destination)
+            onDownloaded(destination)
+        } catch {
+            message = "Tải IPA thất bại: \(error.localizedDescription)"
         }
     }
 }
