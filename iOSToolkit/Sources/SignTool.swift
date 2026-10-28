@@ -283,6 +283,7 @@ struct SignToolView: View {
     @State private var certs: [SignCert] = []
     @State private var selected: SignCert?
     @State private var showAddCert = false
+    @State private var showIPASources = false
     @State private var busy = false
     @State private var message: String?
     @State private var isError = false
@@ -298,6 +299,9 @@ struct SignToolView: View {
                         Image(systemName: "shippingbox")
                         Text(srcURL?.lastPathComponent ?? "Chọn tệp .ipa cần ký…").lineLimit(1)
                     }
+                }
+                Button { showIPASources = true } label: {
+                    Label("Chọn IPA từ nguồn", systemImage: "square.stack.3d.up")
                 }
             } header: { Text("Tệp IPA") } footer: {
                 Text("Nên dùng IPA chưa ký (ví dụ bản xuất từ “Nhân bản / Edit IPA”). zsign sẽ ký đè, không cần gỡ chữ ký cũ trước.")
@@ -364,6 +368,14 @@ struct SignToolView: View {
             AddSignCertView { cert in
                 certs = SignStore.list()
                 selected = cert
+            }
+        }
+        .sheet(isPresented: $showIPASources) {
+            NavigationStack {
+                IPASourcesView { downloadedURL in
+                    useIPA(downloadedURL)
+                    showIPASources = false
+                }
             }
         }
         .alert("Nhật ký", isPresented: $showLog) {
