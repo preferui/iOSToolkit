@@ -2,6 +2,7 @@ import Security
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+import ZIPFoundation
 
 // MARK: - Kho chứng chỉ (p12 + mobileprovision), port đơn giản từ Rsign
 
@@ -346,11 +347,16 @@ struct SignToolView: View {
 
             if let signedURL {
                 Section {
+                    Button {
+                        installSignedIPA(signedURL)
+                    } label: {
+                        Label("Cài trực tiếp lên iPhone", systemImage: "arrow.down.app.fill")
+                    }
                     ShareLink(item: signedURL) {
                         Label("Lưu/chia sẻ bản đã ký", systemImage: "square.and.arrow.up")
                     }
                 } footer: {
-                    Text("Dùng hộp chia sẻ để lưu vào Tệp, AirDrop, hoặc mở bằng app cài đặt khác trên máy.")
+                    Text("Cài trực tiếp sẽ mở trình cài đặt của iOS. Chứng chỉ và provisioning profile vẫn phải hợp lệ cho thiết bị.")
                 }
             }
         }
@@ -435,6 +441,56 @@ struct SignToolView: View {
         }
     }
 
+    private func installSignedIPA(_ url: URL) {
+        guard let archive = Archive(url: url, accessMode: .read) else {
+            isError = true
+            message = "Không đọc được IPA đã ký để lấy thông tin ứng dụng."
+            return
+        }
+        var appInfo: [String: Any]?
+        for entry in archive {
+            let parts = entry.path.split(separator: "/")
+            guard parts.count == 3,
+                  parts[0] == "Payload",
+                  parts[1].hasSuffix(".app"),
+                  parts[2] == "Info.plist" else { continue }
+            var data = Data()
+            do {
+                _ = try archive.extract(entry) { chunk in data.append(chunk) }
+                appInfo = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
+            } catch {
+                Diag.log("install: không đọc được Info.plist: \(error)")
+            }
+            break
+        }
+        guard let info = appInfo,
+              let bundleID = info["CFBundleIdentifier"] as? String, !bundleID.isEmpty else {
+            isError = true
+            message = "Không tìm thấy CFBundleIdentifier trong IPA đã ký."
+            return
+        }
+        let name = (info["CFBundleDisplayName"] as? String)
+            ?? (info["CFBundleName"] as? String)
+            ?? (info["CFBundleExecutable"] as? String)
+            ?? bundleID
+        let version = (info["CFBundleShortVersionString"] as? String)
+            ?? (info["CFBundleVersion"] as? String)
+            ?? "1.0"
+        message = "Đang mở trình cài đặt iOS…"
+        isError = false
+        LocalInstaller.shared.install(ipa: url, bundleID: bundleID, name: name, version: version) { error in
+            DispatchQueue.main.async {
+                if let error {
+                    isError = true
+                    message = error
+                } else {
+                    isError = false
+                    message = "Đã mở yêu cầu cài đặt. Hãy xác nhận trong hộp thoại iOS và theo dõi biểu tượng ứng dụng."
+                }
+            }
+        }
+    }
+
     private func run() {
         guard let srcURL, let selected else { return }
         busy = true; message = nil; signedURL = nil; logText = ""
@@ -448,7 +504,7 @@ struct SignToolView: View {
                 }.value
                 signedURL = url
                 isError = false
-                message = "Đã ký xong."
+                message = "Đã ký xong. Nhấn “Cài trực tiếp lên iPhone” để cài."
                 Diag.log("sign: xong -> \(url.lastPathComponent)")
             } catch {
                 isError = true
