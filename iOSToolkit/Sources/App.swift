@@ -67,3 +67,5 @@ struct RootView: View {
         .padding(.vertical, 4)
     }
 }
+
+// IPA sources screen is implemented in Sources/IPASources.swift.
