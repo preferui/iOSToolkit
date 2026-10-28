@@ -11,6 +11,11 @@ extern "C" {
 // linkage kiểu C, tên hàm sẽ bị đổi (mangle) kiểu C++ và Swift sẽ không thấy symbol.
 int ZSignRun(NSArray<NSString *> *args, void (^ _Nullable log)(NSString *line));
 
+// Chẩn đoán: mở trực tiếp file zip bằng chính thư viện minizip mà zsign dùng (bỏ qua hết
+// logic của zsign), trả về mô tả kết quả. Dùng để biết chính xác bước nào trong "giải nén"
+// bị lỗi khi zsign báo "Unzip failed".
+NSString *ZSignProbeZip(NSString *path);
+
 #ifdef __cplusplus
 }
 #endif

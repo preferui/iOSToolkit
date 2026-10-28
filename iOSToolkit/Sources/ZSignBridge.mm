@@ -1,6 +1,9 @@
 #import "ZSignBridge.h"
 #include <unistd.h>
 #include <getopt.h>
+#include <errno.h>
+#include <string.h>
+#include "unzip.h"
 
 // zsign.cpp đã được vá sẵn trong CI: đổi "int main(...)" thành "int zsign_main(...)"
 // để không đụng main() của chính app, và vô hiệu hoá đoạn fork()/execlp() không dùng được
@@ -67,4 +70,36 @@ int ZSignRun(NSArray<NSString *> *args, void (^log)(NSString *line)) {
 
     [lock unlock];
     return rc;
+}
+
+NSString *ZSignProbeZip(NSString *path) {
+    const char *cpath = path.fileSystemRepresentation;
+    FILE *raw = fopen(cpath, "rb");
+    NSString *rawInfo = raw ? [NSString stringWithFormat:@"fopen thường: OK"] : [NSString stringWithFormat:@"fopen thường: LỖI errno=%d (%s)", errno, strerror(errno)];
+    if (raw) fclose(raw);
+
+    unzFile uf = unzOpen64(cpath);
+    if (!uf) {
+        return [NSString stringWithFormat:@"%@ | unzOpen64: trả về NULL (minizip không mở được file)", rawInfo];
+    }
+    unz_global_info64 gi;
+    memset(&gi, 0, sizeof(gi));
+    int rc = unzGetGlobalInfo64(uf, &gi);
+    if (rc != UNZ_OK) {
+        unzClose(uf);
+        return [NSString stringWithFormat:@"%@ | unzOpen64: OK | unzGetGlobalInfo64: lỗi mã %d", rawInfo, rc];
+    }
+    int gf = unzGoToFirstFile(uf);
+    NSString *firstName = @"(?)";
+    if (gf == UNZ_OK) {
+        char szName[1024] = { 0 };
+        unz_file_info64 fi;
+        memset(&fi, 0, sizeof(fi));
+        if (UNZ_OK == unzGetCurrentFileInfo64(uf, &fi, szName, sizeof(szName), NULL, 0, NULL, 0)) {
+            firstName = [NSString stringWithUTF8String:szName] ?: @"(?)";
+        }
+    }
+    unzClose(uf);
+    return [NSString stringWithFormat:@"%@ | unzOpen64: OK | unzGetGlobalInfo64: OK, %llu mục | unzGoToFirstFile: mã %d, mục đầu=%@",
+            rawInfo, gi.number_entry, gf, firstName];
 }

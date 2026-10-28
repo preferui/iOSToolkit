@@ -161,7 +161,9 @@ enum IPASigner {
         FileManager.default.changeCurrentDirectoryPath(work.path)
         defer { FileManager.default.changeCurrentDirectoryPath(prevCWD) }
 
-        let args = ["-k", cert.p12URL.path, "-p", cert.password, "-m", cert.provURL.path, "-o", out.path, "-z", "3", src.path]
+        log("[chẩn đoán] " + ZSignProbeZip(src.path))
+
+        let args = ["-d", "-k", cert.p12URL.path, "-p", cert.password, "-m", cert.provURL.path, "-o", out.path, "-z", "3", src.path]
         let rc = ZSignRun(args) { line in log(stripANSI(line)) }
         guard rc == 0, FileManager.default.fileExists(atPath: out.path) else {
             throw NSError(domain: "IPASigner", code: Int(rc), userInfo: [
@@ -360,7 +362,7 @@ struct SignToolView: View {
         }
         .alert("Nhật ký", isPresented: $showLog) {
             Button("Đóng", role: .cancel) {}
-        } message: { Text(logText.suffix(2500)) }
+        } message: { Text(trimmedLog) }
         .onAppear {
             certs = SignStore.list()
             if selected == nil { selected = certs.first }
@@ -398,6 +400,15 @@ struct SignToolView: View {
             Diag.log("sign: lỗi sao chép nguồn \(error)")
             return nil
         }
+    }
+
+    /// Lỗi thật thường xảy ra ngay đầu log (ngay sau bước Unzip); log debug (-d) lại rất dài,
+    /// nên giữ phần đầu + phần cuối, bớt đoạn giữa, thay vì chỉ giữ phần cuối như trước.
+    private var trimmedLog: String {
+        guard logText.count > 3000 else { return logText }
+        let head = String(logText.prefix(1800))
+        let tail = String(logText.suffix(1200))
+        return head + "\n…(lược bớt đoạn giữa)…\n" + tail
     }
 
     private func useIPA(_ url: URL) {
