@@ -341,7 +341,7 @@ struct SignToolView: View {
 
             if !logText.isEmpty {
                 Section {
-                    Button { showLog = true } label: { Label("Xem nhật ký ký", systemImage: "doc.text.magnifyingglass") }
+                    Button { showLog = true } label: { Label("Xem nhật ký", systemImage: "doc.text.magnifyingglass") }
                 }
             }
 
@@ -351,9 +351,6 @@ struct SignToolView: View {
                         installSignedIPA(signedURL)
                     } label: {
                         Label("Cài trực tiếp lên iPhone", systemImage: "arrow.down.app.fill")
-                    }
-                    ShareLink(item: signedURL) {
-                        Label("Lưu/chia sẻ bản đã ký", systemImage: "square.and.arrow.up")
                     }
                 } footer: {
                     Text("Cài trực tiếp sẽ mở trình cài đặt của iOS. Chứng chỉ và provisioning profile vẫn phải hợp lệ cho thiết bị.")
@@ -485,7 +482,7 @@ struct SignToolView: View {
                     message = error
                 } else {
                     isError = false
-                    message = "Đã mở yêu cầu cài đặt. Hãy xác nhận trong hộp thoại iOS và theo dõi biểu tượng ứng dụng."
+                    message = "Đã gửi yêu cầu cài đặt đến iOS. Hãy xác nhận trong hộp thoại hệ thống; nếu không xuất hiện, hãy kiểm tra chứng chỉ và provisioning profile."
                 }
             }
         }
@@ -504,7 +501,7 @@ struct SignToolView: View {
                 }.value
                 signedURL = url
                 isError = false
-                message = "Đã ký xong. Nhấn “Cài trực tiếp lên iPhone” để cài."
+                message = "Ký IPA thành công. Nhấn “Cài trực tiếp lên iPhone” để tiếp tục cài đặt."
                 Diag.log("sign: xong -> \(url.lastPathComponent)")
             } catch {
                 isError = true
