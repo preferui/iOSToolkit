@@ -130,14 +130,39 @@ enum SignStore {
 // MARK: - Ký IPA (bọc công cụ zsign biên dịch sẵn trong app)
 
 enum IPASigner {
+    /// Bỏ mã màu ANSI (ví dụ "\u{1B}[31m") trong log của zsign — nếu để nguyên sẽ hiện
+    /// thành chữ rác kiểu "[31m" trên màn hình vì app không phải terminal.
+    private static func stripANSI(_ s: String) -> String {
+        var out = ""
+        let chars = Array(s)
+        var i = 0
+        while i < chars.count {
+            if chars[i] == "\u{1B}", i + 1 < chars.count, chars[i + 1] == "[" {
+                var j = i + 2
+                while j < chars.count, !chars[j].isLetter { j += 1 }
+                i = j < chars.count ? j + 1 : j
+            } else {
+                out.append(chars[i]); i += 1
+            }
+        }
+        return out
+    }
+
     static func sign(src: URL, cert: SignCert, log: @escaping (String) -> Void) throws -> URL {
+        guard FileManager.default.fileExists(atPath: src.path) else {
+            throw NSError(domain: "IPASigner", code: -2, userInfo: [NSLocalizedDescriptionKey: "Không tìm thấy tệp IPA nguồn nữa (có thể đã bị hệ thống dọn) — hãy chọn lại tệp rồi ký lại."])
+        }
         let work = FileManager.default.temporaryDirectory.appendingPathComponent("sign-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: work) }
         let out = work.appendingPathComponent("out.ipa")
 
+        let prevCWD = FileManager.default.currentDirectoryPath
+        FileManager.default.changeCurrentDirectoryPath(work.path)
+        defer { FileManager.default.changeCurrentDirectoryPath(prevCWD) }
+
         let args = ["-k", cert.p12URL.path, "-p", cert.password, "-m", cert.provURL.path, "-o", out.path, "-z", "3", src.path]
-        let rc = ZSignRun(args) { line in log(line) }
+        let rc = ZSignRun(args) { line in log(stripANSI(line)) }
         guard rc == 0, FileManager.default.fileExists(atPath: out.path) else {
             throw NSError(domain: "IPASigner", code: Int(rc), userInfo: [
                 NSLocalizedDescriptionKey: "zsign báo lỗi (mã \(rc)). Xem nhật ký bên dưới — thường do p12/mobileprovision không khớp nhau, hoặc chứng chỉ đã hết hạn.",
@@ -203,8 +228,11 @@ struct AddSignCertView: View {
     }
 
     private enum Pick { case p12, prov }
+    private static let p12Type = UTType(filenameExtension: "p12") ?? .data
+    private static let provType = UTType(filenameExtension: "mobileprovision") ?? .data
     private func pick(_ which: Pick) {
-        DocPicker.present(types: [.item, .data], asCopy: true) { urls in
+        let types = which == .p12 ? [Self.p12Type] : [Self.provType]
+        DocPicker.present(types: types, asCopy: true) { urls in
             guard let url = urls.first else { return }
             _ = url.startAccessingSecurityScopedResource()
             scoped.append(url)
@@ -246,7 +274,6 @@ struct SignToolView: View {
     var initialIPA: URL?
 
     @State private var srcURL: URL?
-    @State private var scoped: URL?
     @State private var certs: [SignCert] = []
     @State private var selected: SignCert?
     @State private var showAddCert = false
@@ -339,7 +366,7 @@ struct SignToolView: View {
             if selected == nil { selected = certs.first }
             if srcURL == nil, let initialIPA { useIPA(initialIPA) }
         }
-        .onDisappear { scoped?.stopAccessingSecurityScopedResource(); scoped = nil }
+        .onDisappear { if let srcURL { try? FileManager.default.removeItem(at: srcURL) } }
     }
 
     @ViewBuilder private var banner: some View {
@@ -357,11 +384,30 @@ struct SignToolView: View {
         }
     }
 
+    /// Sao chép ngay file nguồn vào một chỗ ổn định của app (tmp của riêng app) thay vì giữ
+    /// nguyên URL do document picker trả về: file trong thư mục "-Inbox" của picker có thể bị
+    /// iOS tự dọn sau một lúc, gây lỗi "Invalid path"/"Unzip failed" nếu ký trễ hoặc ký lại.
+    private func stabilize(_ url: URL) -> URL? {
+        let ok = url.startAccessingSecurityScopedResource()
+        defer { if ok { url.stopAccessingSecurityScopedResource() } }
+        let dst = FileManager.default.temporaryDirectory.appendingPathComponent("SignSrc-\(UUID().uuidString)-\(url.lastPathComponent)")
+        do {
+            try FileManager.default.copyItem(at: url, to: dst)
+            return dst
+        } catch {
+            Diag.log("sign: lỗi sao chép nguồn \(error)")
+            return nil
+        }
+    }
+
     private func useIPA(_ url: URL) {
-        scoped?.stopAccessingSecurityScopedResource()
-        _ = url.startAccessingSecurityScopedResource()
-        scoped = url
-        srcURL = url
+        guard let stable = stabilize(url) else {
+            isError = true
+            message = "Không sao chép được tệp đã chọn (có thể bị hệ thống dọn file tạm trước khi đọc)."
+            return
+        }
+        if let old = srcURL { try? FileManager.default.removeItem(at: old) }
+        srcURL = stable
         signedURL = nil
     }
 

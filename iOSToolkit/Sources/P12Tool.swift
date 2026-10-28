@@ -317,7 +317,7 @@ struct P12ToolView: View {
 
     private func pickZip() {
         focus = false
-        DocPicker.present(types: [.zip, .data, .item], asCopy: true) { urls in
+        DocPicker.present(types: [.zip], asCopy: true) { urls in
             guard let url = urls.first else { return }
             guard url.pathExtension.lowercased() == "zip" else { isError = true; message = "Tệp “\(url.lastPathComponent)” không phải .zip."; return }
             scoped?.stopAccessingSecurityScopedResource()
