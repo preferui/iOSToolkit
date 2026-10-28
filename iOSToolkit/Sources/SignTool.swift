@@ -164,8 +164,9 @@ enum IPASigner {
         log("[chẩn đoán 1] " + ZSignProbeZip(src.path))
         let probeDir = FileManager.default.temporaryDirectory.appendingPathComponent("probe-\(UUID().uuidString)")
         log("[chẩn đoán 2] " + ZSignProbeExtract(src.path, probeDir.path))
+        log("[chẩn đoán 3] zsign dùng thư mục tạm tường minh: " + work.path)
 
-        let args = ["-d", "-k", cert.p12URL.path, "-p", cert.password, "-m", cert.provURL.path, "-o", out.path, "-z", "3", src.path]
+        let args = ["-d", "-t", work.path, "-k", cert.p12URL.path, "-p", cert.password, "-m", cert.provURL.path, "-o", out.path, "-z", "3", src.path]
         let rc = ZSignRun(args) { line in log(stripANSI(line)) }
         guard rc == 0, FileManager.default.fileExists(atPath: out.path) else {
             throw NSError(domain: "IPASigner", code: Int(rc), userInfo: [
