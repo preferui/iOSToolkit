@@ -5,12 +5,29 @@ private struct IPASource: Identifiable, Codable, Equatable {
     var id = UUID()
     var name: String
     var url: String
+    /// Icon của chính nguồn (field "iconURL"/"headerURL"/"image" ở gốc JSON — kiểu AltStore/SideStore),
+    /// không phải icon của từng app bên trong. nil nếu JSON nguồn không khai báo.
+    var iconURLString: String?
 
-    /// Avatar/favicon của nguồn, lấy theo domain qua dịch vụ favicon công khai của Google.
+    var iconURL: URL? {
+        guard let iconURLString else { return nil }
+        return URL(string: iconURLString, relativeTo: URL(string: url))?.absoluteURL
+    }
+
+    /// Dự phòng khi nguồn không khai báo icon riêng: favicon theo domain qua dịch vụ công khai của Google.
     var faviconURL: URL? {
         guard let host = URL(string: url)?.host else { return nil }
         return URL(string: "https://www.google.com/s2/favicons?sz=128&domain=\(host)")
     }
+}
+
+/// Icon khai báo ở GỐC JSON của nguồn (khác icon riêng của từng app) — đúng kiểu AltStore/SideStore,
+/// ví dụ các field "iconURL"/"headerURL"/"image"/"icon" ở cấp ngoài cùng của tệp.
+private func repoIconURLString(from object: [String: Any]) -> String? {
+    for key in ["iconURL", "headerURL", "image", "icon"] {
+        if let s = object[key] as? String, !s.isEmpty { return s }
+    }
+    return nil
 }
 
 private struct RepoApp: Identifiable {
@@ -127,7 +144,7 @@ struct IPASourcesView: View {
                             Task { await open(source) }
                         } label: {
                             HStack(spacing: 12) {
-                                AsyncImage(url: source.faviconURL) { image in
+                                AsyncImage(url: source.iconURL ?? source.faviconURL) { image in
                                     image.resizable().scaledToFit()
                                 } placeholder: {
                                     Image(systemName: "globe").resizable().scaledToFit().padding(8).foregroundStyle(.secondary)
@@ -152,13 +169,23 @@ struct IPASourcesView: View {
                     }
                 }
                 Section("Thêm nguồn JSON") {
-                    TextField(text: $newURL, prompt: Text("https://example.com/repo.json").foregroundColor(.secondary)) {
-                        Text("URL nguồn JSON")
+                    ZStack(alignment: .leading) {
+                        // Tự vẽ placeholder màu xám thay vì dùng `prompt:` của TextField: trên
+                        // field kiểu URL, iOS tự tô prompt hệ thống màu xanh (kiểu liên kết) bất
+                        // kể foregroundColor đặt trên Text — kể cả khi bỏ textContentType(.URL).
+                        if newURL.isEmpty {
+                            Text("https://example.com/repo.json")
+                                .foregroundStyle(.secondary)
+                                .allowsHitTesting(false)
+                        }
+                        TextField("", text: $newURL)
+                            .foregroundStyle(.primary)
                     }
                     .font(.body)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .accessibilityLabel("URL nguồn JSON")
                     Button {
                         Task { await addSource() }
                     } label: {
@@ -193,6 +220,7 @@ struct IPASourcesView: View {
             }
         }
         .onAppear(perform: loadSavedSources)
+        .task { await backfillIcons() }
     }
 
     private func loadSavedSources() {
@@ -203,6 +231,29 @@ struct IPASourcesView: View {
             sources = [IPASource(name: "AppTesters", url: defaultURL)]
             persist()
         }
+    }
+
+    /// Các nguồn đã lưu từ trước khi có field icon riêng (hoặc lúc thêm chưa đọc được icon) sẽ
+    /// chưa có iconURLString — âm thầm tải lại JSON của nguồn một lần để lấy icon thật của repo,
+    /// thay vì chỉ dùng favicon dự phòng.
+    @MainActor
+    private func backfillIcons() async {
+        for source in sources where source.iconURLString == nil {
+            guard let url = URL(string: source.url) else { continue }
+            do {
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 15
+                let (data, _) = try await URLSession.shared.data(for: request)
+                guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let icon = repoIconURLString(from: object) else { continue }
+                if let idx = sources.firstIndex(where: { $0.id == source.id }) {
+                    sources[idx].iconURLString = icon
+                }
+            } catch {
+                continue
+            }
+        }
+        persist()
     }
 
     private func persist() {
@@ -239,7 +290,7 @@ struct IPASourcesView: View {
                 return
             }
             let name = (object["name"] as? String) ?? (object["repoName"] as? String) ?? host
-            sources.append(IPASource(name: name, url: url.absoluteString))
+            sources.append(IPASource(name: name, url: url.absoluteString, iconURLString: repoIconURLString(from: object)))
             persist()
             newURL = ""
             message = "Đã thêm nguồn \(name)."
@@ -276,6 +327,12 @@ struct IPASourcesView: View {
             apps = rawApps.compactMap { RepoApp(json: $0, baseURL: url, sourceName: source.name) }
             if apps.isEmpty {
                 message = "Đã đọc JSON nhưng không tìm thấy mục nào có liên kết IPA trực tiếp."
+            }
+            if source.iconURLString == nil, let icon = repoIconURLString(from: object),
+               let idx = sources.firstIndex(where: { $0.id == source.id }) {
+                sources[idx].iconURLString = icon
+                activeSource = sources[idx]
+                persist()
             }
         } catch {
             message = "Không tải được danh sách ứng dụng: \(error.localizedDescription)"
