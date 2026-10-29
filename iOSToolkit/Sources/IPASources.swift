@@ -295,7 +295,7 @@ struct IPASourcesView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(app.name).font(.headline).foregroundStyle(.primary)
                 if !app.version.isEmpty {
-                    Text("Phiên bản \\(app.version)").font(.caption).foregroundStyle(.secondary)
+                    Text("Phiên bản \(app.version)").font(.caption).foregroundStyle(.secondary)
                 }
                 if !app.sourceName.isEmpty {
                     Text(app.sourceName).font(.caption2).foregroundStyle(.secondary)
