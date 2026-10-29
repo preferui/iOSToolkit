@@ -164,7 +164,7 @@ struct IPASourcesView: View {
             }
         }
         .searchable(text: $searchText, prompt: "Tìm ứng dụng theo tên")
-        .onChange(of: searchText) { _, value in
+        .onChange(of: searchText) { value in
             searchTask?.cancel()
             let query = value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard activeSource == nil, !query.isEmpty else {
