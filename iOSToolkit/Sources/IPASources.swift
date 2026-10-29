@@ -14,8 +14,9 @@ private struct RepoApp: Identifiable {
     let description: String
     let iconURL: URL?
     let downloadURL: URL
+    let sourceName: String
 
-    init?(json: [String: Any], baseURL: URL) {
+    init?(json: [String: Any], baseURL: URL, sourceName: String = "") {
         guard let name = json["name"] as? String, !name.isEmpty else { return nil }
         let version = json["version"] as? String ?? ""
         let description = json["localizedDescription"] as? String ?? json["subtitle"] as? String ?? ""
@@ -29,6 +30,7 @@ private struct RepoApp: Identifiable {
         let rawIcon = (json["iconURL"] as? String) ?? (json["icon"] as? String) ?? ""
         self.iconURL = URL(string: rawIcon, relativeTo: baseURL)?.absoluteURL
         self.downloadURL = download
+        self.sourceName = sourceName
     }
 }
 
@@ -45,23 +47,44 @@ struct IPASourcesView: View {
     @State private var loading = false
     @State private var downloadingID: String?
     @State private var message = ""
+    @State private var globalSearchResults: [RepoApp] = []
+    @State private var searchingAllSources = false
+    @State private var searchTask: Task<Void, Never>?
 
     private let defaultURL = "https://repository.apptesters.org/"
 
     private var visibleApps: [RepoApp] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return apps }
-        return apps.filter { $0.name.localizedCaseInsensitiveContains(query) || $0.description.localizedCaseInsensitiveContains(query) || $0.version.localizedCaseInsensitiveContains(query) }
+        guard !query.isEmpty else { return activeSource == nil ? apps : apps }
+        let base = activeSource == nil && !globalSearchResults.isEmpty ? globalSearchResults : apps
+        return base.filter { $0.name.localizedCaseInsensitiveContains(query) || $0.description.localizedCaseInsensitiveContains(query) || $0.version.localizedCaseInsensitiveContains(query) }
     }
 
     var body: some View {
         List {
-            if let activeSource {
+            if activeSource == nil && !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Section {
+                    if searchingAllSources {
+                        HStack { ProgressView(); Text("Đang tìm ứng dụng trong các nguồn…").foregroundStyle(.secondary) }
+                    } else if visibleApps.isEmpty {
+                        Text("Không tìm thấy ứng dụng phù hợp.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(visibleApps) { app in
+                            appRow(app)
+                        }
+                    }
+                } header: {
+                    Text("Ứng dụng phù hợp (\(visibleApps.count))")
+                }
+            } else if let activeSource {
                 Section {
                     HStack {
                         Button {
                             self.activeSource = nil
                             apps = []
+                            globalSearchResults = []
+                            searchText = ""
                             message = ""
                         } label: {
                             Label("Tất cả nguồn", systemImage: "chevron.left")
@@ -81,31 +104,7 @@ struct IPASourcesView: View {
                             Button {
                                 Task { await download(app) }
                             } label: {
-                                HStack(spacing: 12) {
-                                    AsyncImage(url: app.iconURL) { image in
-                                        image.resizable().scaledToFill()
-                                    } placeholder: {
-                                        Image(systemName: "app.dashed").resizable().scaledToFit().padding(10).foregroundStyle(.secondary)
-                                    }
-                                    .frame(width: 48, height: 48)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(app.name).font(.headline).foregroundStyle(.primary)
-                                        if !app.version.isEmpty {
-                                            Text("Phiên bản \(app.version)").font(.caption).foregroundStyle(.secondary)
-                                        }
-                                        if !app.description.isEmpty {
-                                            Text(app.description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                                        }
-                                    }
-                                    Spacer(minLength: 4)
-                                    if downloadingID == app.id {
-                                        ProgressView()
-                                    } else {
-                                        Image(systemName: "arrow.down.circle.fill").font(.title2).foregroundStyle(.tint)
-                                    }
-                                }
-                                .contentShape(Rectangle())
+                                appRowContent(app)
                             }
                             .buttonStyle(.plain)
                             .disabled(downloadingID != nil)
@@ -138,10 +137,16 @@ struct IPASourcesView: View {
                     }
                 }
                 Section("Thêm nguồn JSON") {
-                    TextField("https://example.com/repo.json", text: $newURL)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                    TextField(text: $newURL, prompt: Text("https://example.com/repo.json").foregroundColor(.secondary)) {
+                        Text("URL nguồn JSON")
+                    }
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .tint(.accentColor)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .textContentType(.URL)
                     Button {
                         Task { await addSource() }
                     } label: {
@@ -158,7 +163,16 @@ struct IPASourcesView: View {
                 Section { Text(message).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled) }
             }
         }
-        .searchable(text: $searchText, prompt: activeSource == nil ? "Tìm nguồn IPA" : "Tìm ứng dụng")
+        .searchable(text: $searchText, prompt: "Tìm ứng dụng theo tên")
+        .onChange(of: searchText) { _, value in
+            searchTask?.cancel()
+            let query = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard activeSource == nil, !query.isEmpty else {
+                globalSearchResults = []
+                return
+            }
+            searchTask = Task { await searchAcrossSources(query: query) }
+        }
         .navigationTitle(activeSource?.name ?? "Nguồn IPA")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -247,12 +261,85 @@ struct IPASourcesView: View {
                 message = "JSON không có danh sách apps hợp lệ."
                 return
             }
-            apps = rawApps.compactMap { RepoApp(json: $0, baseURL: url) }
+            apps = rawApps.compactMap { RepoApp(json: $0, baseURL: url, sourceName: source.name) }
             if apps.isEmpty {
                 message = "Đã đọc JSON nhưng không tìm thấy mục nào có liên kết IPA trực tiếp."
             }
         } catch {
             message = "Không tải được danh sách ứng dụng: \(error.localizedDescription)"
+        }
+    }
+
+
+    @ViewBuilder
+    private func appRow(_ app: RepoApp) -> some View {
+        Button {
+            Task { await download(app) }
+        } label: {
+            appRowContent(app)
+        }
+        .buttonStyle(.plain)
+        .disabled(downloadingID != nil)
+    }
+
+    @ViewBuilder
+    private func appRowContent(_ app: RepoApp) -> some View {
+        HStack(spacing: 12) {
+            AsyncImage(url: app.iconURL) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                Image(systemName: "app.dashed").resizable().scaledToFit().padding(10).foregroundStyle(.secondary)
+            }
+            .frame(width: 48, height: 48)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(app.name).font(.headline).foregroundStyle(.primary)
+                if !app.version.isEmpty {
+                    Text("Phiên bản \\(app.version)").font(.caption).foregroundStyle(.secondary)
+                }
+                if !app.sourceName.isEmpty {
+                    Text(app.sourceName).font(.caption2).foregroundStyle(.secondary)
+                }
+                if !app.description.isEmpty {
+                    Text(app.description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+            Spacer(minLength: 4)
+            if downloadingID == app.id {
+                ProgressView()
+            } else {
+                Image(systemName: "arrow.down.circle.fill").font(.title2).foregroundStyle(.tint)
+            }
+        }
+        .contentShape(Rectangle())
+        .padding(.vertical, 2)
+    }
+
+    @MainActor
+    private func searchAcrossSources(query: String) async {
+        searchingAllSources = true
+        defer { searchingAllSources = false }
+        var found: [RepoApp] = []
+        for source in sources {
+            if Task.isCancelled { return }
+            guard let url = URL(string: source.url) else { continue }
+            do {
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 20
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
+                let (data, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) { continue }
+                guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let rawApps = root["apps"] as? [[String: Any]] else { continue }
+                let matching = rawApps.compactMap { RepoApp(json: $0, baseURL: url, sourceName: source.name) }
+                    .filter { $0.name.localizedCaseInsensitiveContains(query) || $0.description.localizedCaseInsensitiveContains(query) || $0.version.localizedCaseInsensitiveContains(query) }
+                found.append(contentsOf: matching)
+            } catch {
+                continue
+            }
+        }
+        if !Task.isCancelled {
+            globalSearchResults = found
         }
     }
 
