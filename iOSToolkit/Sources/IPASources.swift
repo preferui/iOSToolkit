@@ -46,6 +46,7 @@ struct IPASourcesView: View {
     @State private var newURL = ""
     @State private var loading = false
     @State private var downloadingID: String?
+    @State private var downloadProgress: Double = 0
     @State private var message = ""
     @State private var globalSearchResults: [RepoApp] = []
     @State private var searchingAllSources = false
@@ -141,8 +142,6 @@ struct IPASourcesView: View {
                         Text("URL nguồn JSON")
                     }
                     .font(.body)
-                    .foregroundStyle(.primary)
-                    .tint(.accentColor)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -306,7 +305,13 @@ struct IPASourcesView: View {
             }
             Spacer(minLength: 4)
             if downloadingID == app.id {
-                ProgressView()
+                VStack(alignment: .trailing, spacing: 3) {
+                    ProgressView(value: downloadProgress)
+                        .frame(width: 56)
+                    Text(downloadProgress > 0 ? "\(Int(downloadProgress * 100))%" : "Đang tải…")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             } else {
                 Image(systemName: "arrow.down.circle.fill").font(.title2).foregroundStyle(.tint)
             }
@@ -346,15 +351,14 @@ struct IPASourcesView: View {
     @MainActor
     private func download(_ app: RepoApp) async {
         downloadingID = app.id
+        downloadProgress = 0
         message = ""
-        defer { downloadingID = nil }
+        defer { downloadingID = nil; downloadProgress = 0 }
         do {
             var request = URLRequest(url: app.downloadURL)
             request.timeoutInterval = 120
-            let (temporaryURL, response) = try await URLSession.shared.download(for: request)
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                message = "Không tải được IPA (HTTP \(http.statusCode))."
-                return
+            let temporaryURL = try await Self.downloadWithProgress(request: request) { fraction in
+                Task { @MainActor in downloadProgress = fraction }
             }
             let destination = FileManager.default.temporaryDirectory
                 .appendingPathComponent("Source-\(UUID().uuidString)-\(app.name.replacingOccurrences(of: "/", with: "-")).ipa")
@@ -362,6 +366,41 @@ struct IPASourcesView: View {
             onDownloaded(destination)
         } catch {
             message = "Tải IPA thất bại: \(error.localizedDescription)"
+        }
+    }
+
+    /// Tải file bằng URLSessionDownloadTask (thay vì API async `download(for:)` không có tiến trình)
+    /// để theo dõi được `fractionCompleted` và hiển thị thanh tiến trình thật khi tải IPA từ nguồn.
+    private static func downloadWithProgress(request: URLRequest, onProgress: @escaping (Double) -> Void) async throws -> URL {
+        final class ObserverBox { var observation: NSKeyValueObservation? }
+        let box = ObserverBox()
+        return try await withCheckedThrowingContinuation { continuation in
+            let task = URLSession.shared.downloadTask(with: request) { url, response, error in
+                box.observation?.invalidate()
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                    continuation.resume(throwing: NSError(domain: "IPASources", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "Máy chủ trả về HTTP \(http.statusCode)."]))
+                    return
+                }
+                guard let url else {
+                    continuation.resume(throwing: NSError(domain: "IPASources", code: -1, userInfo: [NSLocalizedDescriptionKey: "Không nhận được tệp đã tải."]))
+                    return
+                }
+                let stable = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".ipa")
+                do {
+                    try FileManager.default.moveItem(at: url, to: stable)
+                    continuation.resume(returning: stable)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+            box.observation = task.progress.observe(\.fractionCompleted, options: [.new]) { progress, _ in
+                onProgress(progress.fractionCompleted)
+            }
+            task.resume()
         }
     }
 }

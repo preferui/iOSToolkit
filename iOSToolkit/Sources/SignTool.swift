@@ -295,13 +295,10 @@ struct SignToolView: View {
         Form {
             Section {
                 Button { pickIPA() } label: {
-                    HStack {
-                        Image(systemName: "shippingbox")
-                        Text(srcURL?.lastPathComponent ?? "Chọn tệp .ipa cần ký…").lineLimit(1)
-                    }
+                    sourceRow(icon: "shippingbox", title: srcURL?.lastPathComponent ?? "Chọn tệp .ipa cần ký…")
                 }
                 Button { showIPASources = true } label: {
-                    Label("Chọn IPA từ nguồn", systemImage: "square.stack.3d.up")
+                    sourceRow(icon: "square.stack.3d.up", title: "Chọn IPA từ nguồn")
                 }
             } header: { Text("Tệp IPA") } footer: {
                 Text("Nên dùng IPA chưa ký (ví dụ bản xuất từ “Nhân bản / Edit IPA”). zsign sẽ ký đè, không cần gỡ chữ ký cũ trước.")
@@ -387,6 +384,19 @@ struct SignToolView: View {
             if srcURL == nil, let initialIPA { useIPA(initialIPA) }
         }
         .onDisappear { if let srcURL { try? FileManager.default.removeItem(at: srcURL) } }
+    }
+
+    /// Hàng chọn nguồn IPA (chọn tệp / chọn từ nguồn) với icon cùng khung rộng và khoảng cách
+    /// giống nhau, để hai nút không bị lệch chữ do các icon SF Symbols có bề ngang khác nhau.
+    @ViewBuilder
+    private func sourceRow(icon: String, title: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.body)
+                .frame(width: 22, alignment: .center)
+                .foregroundStyle(.tint)
+            Text(title).lineLimit(1)
+        }
     }
 
     @ViewBuilder private var banner: some View {
