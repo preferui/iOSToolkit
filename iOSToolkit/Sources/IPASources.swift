@@ -70,6 +70,7 @@ struct IPASourcesView: View {
     @State private var loading = false
     @State private var downloadingID: String?
     @State private var downloadProgress: Double = 0
+    @State private var activeDownloadTask: URLSessionDownloadTask?
     @State private var message = ""
     @State private var globalSearchResults: [RepoApp] = []
     @State private var searchingAllSources = false
@@ -126,12 +127,12 @@ struct IPASourcesView: View {
                     } else {
                         ForEach(visibleApps) { app in
                             Button {
-                                Task { await download(app) }
+                                handleTap(app)
                             } label: {
                                 appRowContent(app)
                             }
                             .buttonStyle(.plain)
-                            .disabled(downloadingID != nil)
+                            .disabled(downloadingID != nil && downloadingID != app.id)
                         }
                     }
                 } header: {
@@ -174,7 +175,11 @@ struct IPASourcesView: View {
                         // field kiểu URL, iOS tự tô prompt hệ thống màu xanh (kiểu liên kết) bất
                         // kể foregroundColor đặt trên Text — kể cả khi bỏ textContentType(.URL).
                         if newURL.isEmpty {
-                            Text("https://example.com/repo.json")
+                            // Text(verbatim:) thay vì Text(_ literal:) — chuỗi literal đi qua
+                            // LocalizedStringKey/Markdown của SwiftUI, nên một chuỗi NHÌN GIỐNG URL
+                            // tự bị hệ thống tô "data detector" màu xanh kiểu liên kết, bất kể
+                            // foregroundStyle. verbatim: bỏ qua hẳn bước đó, hiển thị chữ thô.
+                            Text(verbatim: "https://example.com/repo.json")
                                 .foregroundStyle(.secondary)
                                 .allowsHitTesting(false)
                         }
@@ -343,12 +348,22 @@ struct IPASourcesView: View {
     @ViewBuilder
     private func appRow(_ app: RepoApp) -> some View {
         Button {
-            Task { await download(app) }
+            handleTap(app)
         } label: {
             appRowContent(app)
         }
         .buttonStyle(.plain)
-        .disabled(downloadingID != nil)
+        .disabled(downloadingID != nil && downloadingID != app.id)
+    }
+
+    /// Giống nút tải trên App Store: lần nhấn đầu bắt đầu tải, nhấn lần nữa trong lúc đang tải
+    /// (nút đang hiện vòng tiến trình + ô vuông ở giữa) sẽ huỷ tải thay vì tải lại từ đầu.
+    private func handleTap(_ app: RepoApp) {
+        if downloadingID == app.id {
+            activeDownloadTask?.cancel()
+        } else {
+            Task { await download(app) }
+        }
     }
 
     @ViewBuilder
@@ -375,19 +390,33 @@ struct IPASourcesView: View {
             }
             Spacer(minLength: 4)
             if downloadingID == app.id {
-                VStack(alignment: .trailing, spacing: 3) {
-                    ProgressView(value: downloadProgress)
-                        .frame(width: 56)
-                    Text(downloadProgress > 0 ? "\(Int(downloadProgress * 100))%" : "Đang tải…")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                downloadRing
             } else {
                 Image(systemName: "arrow.down.circle.fill").font(.title2).foregroundStyle(.tint)
             }
         }
         .contentShape(Rectangle())
         .padding(.vertical, 2)
+    }
+
+    /// Nút tải kiểu App Store: vòng tròn tiến trình + ô vuông bo góc ở giữa (nút dừng).
+    /// Nhấn vào hàng lúc này (xem handleTap) sẽ huỷ tải thay vì tải lại.
+    @ViewBuilder
+    private var downloadRing: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.25), lineWidth: 2.5)
+            Circle()
+                .trim(from: 0, to: max(downloadProgress, 0.015))
+                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(.linear(duration: 0.15), value: downloadProgress)
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(Color.accentColor)
+                .frame(width: 10, height: 10)
+        }
+        .frame(width: 28, height: 28)
+        .contentShape(Circle())
     }
 
     @MainActor
@@ -423,25 +452,37 @@ struct IPASourcesView: View {
         downloadingID = app.id
         downloadProgress = 0
         message = ""
-        defer { downloadingID = nil; downloadProgress = 0 }
+        defer { downloadingID = nil; downloadProgress = 0; activeDownloadTask = nil }
         do {
             var request = URLRequest(url: app.downloadURL)
             request.timeoutInterval = 120
             let temporaryURL = try await Self.downloadWithProgress(request: request) { fraction in
                 Task { @MainActor in downloadProgress = fraction }
+            } onTaskCreated: { task in
+                Task { @MainActor in activeDownloadTask = task }
             }
             let destination = FileManager.default.temporaryDirectory
                 .appendingPathComponent("Source-\(UUID().uuidString)-\(app.name.replacingOccurrences(of: "/", with: "-")).ipa")
             try FileManager.default.moveItem(at: temporaryURL, to: destination)
             onDownloaded(destination)
         } catch {
-            message = "Tải IPA thất bại: \(error.localizedDescription)"
+            let nsError = error as NSError
+            if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
+                message = "Đã huỷ tải \(app.name)."
+            } else {
+                message = "Tải IPA thất bại: \(error.localizedDescription)"
+            }
         }
     }
 
-    /// Tải file bằng URLSessionDownloadTask (thay vì API async `download(for:)` không có tiến trình)
-    /// để theo dõi được `fractionCompleted` và hiển thị thanh tiến trình thật khi tải IPA từ nguồn.
-    private static func downloadWithProgress(request: URLRequest, onProgress: @escaping (Double) -> Void) async throws -> URL {
+    /// Tải file bằng URLSessionDownloadTask (thay vì API async `download(for:)` không có tiến trình
+    /// và không huỷ được giữa chừng) để theo dõi `fractionCompleted` cho vòng tiến trình, và trả
+    /// về chính task để nhấn lần hai có thể gọi `task.cancel()` giống nút tải trên App Store.
+    private static func downloadWithProgress(
+        request: URLRequest,
+        onProgress: @escaping (Double) -> Void,
+        onTaskCreated: @escaping (URLSessionDownloadTask) -> Void
+    ) async throws -> URL {
         final class ObserverBox { var observation: NSKeyValueObservation? }
         let box = ObserverBox()
         return try await withCheckedThrowingContinuation { continuation in
@@ -467,6 +508,7 @@ struct IPASourcesView: View {
                     continuation.resume(throwing: error)
                 }
             }
+            onTaskCreated(task)
             box.observation = task.progress.observe(\.fractionCompleted, options: [.new]) { progress, _ in
                 onProgress(progress.fractionCompleted)
             }
