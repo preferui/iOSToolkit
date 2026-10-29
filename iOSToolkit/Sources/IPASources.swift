@@ -5,6 +5,12 @@ private struct IPASource: Identifiable, Codable, Equatable {
     var id = UUID()
     var name: String
     var url: String
+
+    /// Avatar/favicon của nguồn, lấy theo domain qua dịch vụ favicon công khai của Google.
+    var faviconURL: URL? {
+        guard let host = URL(string: url)?.host else { return nil }
+        return URL(string: "https://www.google.com/s2/favicons?sz=128&domain=\(host)")
+    }
 }
 
 private struct RepoApp: Identifiable {
@@ -120,7 +126,15 @@ struct IPASourcesView: View {
                         Button {
                             Task { await open(source) }
                         } label: {
-                            HStack {
+                            HStack(spacing: 12) {
+                                AsyncImage(url: source.faviconURL) { image in
+                                    image.resizable().scaledToFit()
+                                } placeholder: {
+                                    Image(systemName: "globe").resizable().scaledToFit().padding(8).foregroundStyle(.secondary)
+                                }
+                                .frame(width: 36, height: 36)
+                                .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
+                                .clipShape(RoundedRectangle(cornerRadius: 9))
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(source.name).font(.headline).foregroundStyle(.primary)
                                     Text(source.url).font(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -145,7 +159,6 @@ struct IPASourcesView: View {
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    .textContentType(.URL)
                     Button {
                         Task { await addSource() }
                     } label: {
@@ -162,7 +175,7 @@ struct IPASourcesView: View {
                 Section { Text(message).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled) }
             }
         }
-        .searchable(text: $searchText, prompt: "Tìm ứng dụng theo tên")
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Tìm ứng dụng theo tên")
         .onChange(of: searchText) { value in
             searchTask?.cancel()
             let query = value.trimmingCharacters(in: .whitespacesAndNewlines)
