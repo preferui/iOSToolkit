@@ -35,7 +35,6 @@ struct Tool: Identifiable {
 }
 
 struct RootView: View {
-    @State private var showWelcome = !UserDefaults.standard.bool(forKey: "ioskit.welcome.seen.v1")
     private let tools = Tool.catalog
 
     var body: some View {
@@ -45,11 +44,13 @@ struct RootView: View {
                     ForEach(tools) { tool in
                         if tool.ready {
                             NavigationLink {
-                                if tool.kind == 1 { P12ToolView() }
-                                else if tool.kind == 2 { IPACloneToolView() }
-                                else if tool.kind == 3 { SignToolView() }
-                                else if tool.kind == 4 { DeviceSyncView() }
-                                else { AppStoreToolView() }
+                                ToolIntroGate(tool: tool) {
+                                    if tool.kind == 1 { P12ToolView() }
+                                    else if tool.kind == 2 { IPACloneToolView() }
+                                    else if tool.kind == 3 { SignToolView() }
+                                    else if tool.kind == 4 { DeviceSyncView() }
+                                    else { AppStoreToolView() }
+                                }
                             } label: { row(tool) }
                         } else {
                             row(tool).opacity(0.5)
@@ -61,16 +62,9 @@ struct RootView: View {
             }
             .navigationTitle("iOS Toolkit")
             .toolbar {
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button { showWelcome = true } label: { Image(systemName: "info.circle") }
+                ToolbarItem(placement: .navigationBarTrailing) {
                     NavigationLink { DiagView() } label: { Image(systemName: "doc.text.magnifyingglass") }
                 }
-            }
-        }
-        .fullScreenCover(isPresented: $showWelcome) {
-            WelcomeView {
-                UserDefaults.standard.set(true, forKey: "ioskit.welcome.seen.v1")
-                showWelcome = false
             }
         }
     }
