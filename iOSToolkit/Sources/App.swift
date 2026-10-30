@@ -17,17 +17,26 @@ struct Tool: Identifiable {
     let color: Color
     let ready: Bool
     var kind: Int = 0
+    /// Lưu ý/cảnh báo riêng cho công cụ này, hiện ở màn chào mừng. nil nếu không có gì đặc biệt.
+    var caution: String? = nil
+
+    static let catalog: [Tool] = [
+        Tool(title: "Tải IPA từ App Store", subtitle: "Tải app theo ID bằng Apple ID của bạn, kể cả app đã bị gỡ nếu tài khoản từng nhận", icon: "arrow.down.app.fill", color: .blue, ready: true,
+             caution: "Cần đăng nhập Apple ID thật của bạn để lấy IPA — chỉ dùng để tải app bạn đã sở hữu/được phép, không phải cách lách mua app trả phí."),
+        Tool(title: "Đổi mật khẩu P12", subtitle: "Chọn gói zip chứng chỉ, nhập mật khẩu cũ và mới, ghi đè thẳng vào gói zip", icon: "key.fill", color: .green, ready: true, kind: 1,
+             caution: "Thao tác ghi đè thẳng lên gói zip gốc — nên giữ thêm 1 bản sao lưu trước khi đổi."),
+        Tool(title: "Nhân bản / Edit IPA", subtitle: "Đổi Bundle ID, tên, icon — tạo nhiều bản cài song song từ 1 IPA", icon: "rectangle.on.rectangle", color: .teal, ready: true, kind: 2),
+        Tool(title: "Ký IPA", subtitle: "Ký IPA bằng chứng chỉ .p12 + .mobileprovision của bạn (dùng zsign)", icon: "signature", color: .purple, ready: true, kind: 3,
+             caution: "Cần chứng chỉ .p12 + .mobileprovision còn hạn và khớp nhau. Chứng chỉ hết hạn/không khớp sẽ ký thất bại."),
+        Tool(title: "Đồng bộ thiết bị (Beta)", subtitle: "Bước nền tảng: nhập pairing file + kết nối thẳng tới thiết bị, không qua máy tính", icon: "antenna.radiowaves.left.and.right", color: .pink, ready: true, kind: 4,
+             caution: "Thử nghiệm (Beta). Cần cài thêm 1 app VPN cục bộ (kiểu LocalDevVPN) đang chạy + pairing file xuất từ máy tính. Chưa được kiểm thử đầy đủ trên thiết bị thật."),
+        Tool(title: "Công cụ khác", subtitle: "Sắp có", icon: "wrench.and.screwdriver.fill", color: .orange, ready: false),
+    ]
 }
 
 struct RootView: View {
-    private let tools: [Tool] = [
-        Tool(title: "Tải IPA từ App Store", subtitle: "Tải app theo ID bằng Apple ID của bạn, kể cả app đã bị gỡ nếu tài khoản từng nhận", icon: "arrow.down.app.fill", color: .blue, ready: true),
-        Tool(title: "Đổi mật khẩu P12", subtitle: "Chọn gói zip chứng chỉ, nhập mật khẩu cũ và mới, ghi đè thẳng vào gói zip", icon: "key.fill", color: .green, ready: true, kind: 1),
-        Tool(title: "Nhân bản / Edit IPA", subtitle: "Đổi Bundle ID, tên, icon — tạo nhiều bản cài song song từ 1 IPA", icon: "rectangle.on.rectangle", color: .teal, ready: true, kind: 2),
-        Tool(title: "Ký IPA", subtitle: "Ký IPA bằng chứng chỉ .p12 + .mobileprovision của bạn (dùng zsign)", icon: "signature", color: .purple, ready: true, kind: 3),
-        Tool(title: "Đồng bộ thiết bị (Beta)", subtitle: "Bước nền tảng: nhập pairing file + kết nối thẳng tới thiết bị, không qua máy tính", icon: "antenna.radiowaves.left.and.right", color: .pink, ready: true, kind: 4),
-        Tool(title: "Công cụ khác", subtitle: "Sắp có", icon: "wrench.and.screwdriver.fill", color: .orange, ready: false),
-    ]
+    @State private var showWelcome = !UserDefaults.standard.bool(forKey: "ioskit.welcome.seen.v1")
+    private let tools = Tool.catalog
 
     var body: some View {
         NavigationStack {
@@ -51,7 +60,18 @@ struct RootView: View {
                 }
             }
             .navigationTitle("iOS Toolkit")
-            .toolbar { ToolbarItem(placement: .navigationBarTrailing) { NavigationLink { DiagView() } label: { Image(systemName: "doc.text.magnifyingglass") } } }
+            .toolbar {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button { showWelcome = true } label: { Image(systemName: "info.circle") }
+                    NavigationLink { DiagView() } label: { Image(systemName: "doc.text.magnifyingglass") }
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showWelcome) {
+            WelcomeView {
+                UserDefaults.standard.set(true, forKey: "ioskit.welcome.seen.v1")
+                showWelcome = false
+            }
         }
     }
 
