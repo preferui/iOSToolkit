@@ -99,10 +99,10 @@ struct AppStoreToolView: View {
                 Button {
                     guard let id = appID else { return }
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil); Task { await claim(id) }
-                } label: { HStack { Text("Nhận app vào tài khoản (miễn phí)"); if claiming { Spacer(); ProgressView() } } }
+                } label: { HStack { Text("Thử nhận app vào Apple ID"); if claiming { Spacer(); ProgressView() } } }
                 .disabled(email.isEmpty || appID == nil || claiming || job.running)
             } header: { Text("Ứng dụng") } footer: {
-                Text("ID là dãy số trong link App Store (apps.apple.com/…/id123456789). “Liệt kê phiên bản” chỉ dùng được với app mà Apple ID đã từng tải/nhận. Để trống ID phiên bản để tải bản mới nhất. App đã gỡ thường cần ID phiên bản cụ thể.")
+                Text("Nhập ID hoặc dán link App Store. “Thử nhận app” gửi yêu cầu nhận ứng dụng miễn phí tới Apple ID; với app đã gỡ, Apple có thể từ chối nếu không còn cho phép phân phối. Nếu đã được cấp quyền, hãy thử tải IPA; app cũ có thể cần ID phiên bản cụ thể.")
             }
 
             Section {
@@ -186,7 +186,7 @@ struct AppStoreToolView: View {
                 try await Purchase.purchase(account: &acc, app: sw)
             }
             store.save(acc)
-            job.status = "Apple đã chấp nhận: app \(id) đã được thêm vào tài khoản. Mục “Đã mua” trong App Store có thể cập nhật chậm vài phút."
+            job.status = "Apple đã chấp nhận yêu cầu nhận app ID \(id). Hãy kiểm tra lịch sử ứng dụng đã nhận; nếu app đã bị gỡ, việc tải IPA vẫn có thể bị Apple từ chối."
         } catch {
             Diag.log("nhận app: lỗi \(error)")
             job.error = error.localizedDescription
