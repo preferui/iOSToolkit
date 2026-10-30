@@ -45,6 +45,41 @@ jobs:
           cp "$Z"/third-party/minizip/ioapi.c "$Z"/third-party/minizip/unzip.c "$Z"/third-party/minizip/zip.c "$Z"/third-party/minizip/mztools.c "$DEST/third-party/minizip/" 2>/dev/null || true
           cp "$Z"/third-party/minizip/*.h "$DEST/third-party/minizip/" 2>/dev/null || true
           find "$DEST" -type f | sort
+      - name: Cache thư viện idevice-ffi (Rust) cho tính năng đồng bộ thiết bị
+        id: idevice-cache
+        uses: actions/cache@v4
+        with:
+          path: iOSToolkit/idevice
+          key: idevice-ffi-v1-89702099f4d7552f704f93b4526756abda319ceb
+      - name: Build thư viện idevice-ffi (Rust) — cầu nối tới RemotePairing/lockdown của thiết bị
+        if: steps.idevice-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          source "$HOME/.cargo/env"
+          rustup target add aarch64-apple-ios
+          # Ghim đúng 1 commit cụ thể (thay vì HEAD trôi nổi) để build luôn tái lập được giống nhau.
+          mkdir -p "$HOME/idevice-src" && cd "$HOME/idevice-src"
+          git init -q
+          git remote add origin https://github.com/jkcoxson/idevice.git
+          git fetch --depth 1 origin 89702099f4d7552f704f93b4526756abda319ceb
+          git checkout -q FETCH_HEAD
+          cd ffi
+          RUSTFLAGS="-C link-arg=-miphoneos-version-min=16.0" \
+          BINDGEN_EXTRA_CLANG_ARGS="--sysroot=$(xcrun --sdk iphoneos --show-sdk-path)" \
+          IPHONEOS_DEPLOYMENT_TARGET=16.0 \
+          cargo build --release --target aarch64-apple-ios --features obfuscate
+          DEST="$GITHUB_WORKSPACE/iOSToolkit/idevice"
+          mkdir -p "$DEST/include" "$DEST/lib"
+          cp idevice.h "$DEST/include/idevice.h"
+          cp "../target/aarch64-apple-ios/release/libidevice_ffi.a" "$DEST/lib/libidevice_ffi.a"
+          ls -la "$DEST/include" "$DEST/lib"
+      - name: Kiểm tra idevice-ffi đã sẵn sàng (dù lấy từ cache hay vừa build)
+        run: |
+          set -euo pipefail
+          test -f iOSToolkit/idevice/include/idevice.h
+          test -f iOSToolkit/idevice/lib/libidevice_ffi.a
+          ls -la iOSToolkit/idevice/include iOSToolkit/idevice/lib
       - name: Lấy header OpenSSL (dùng chung thư viện OpenSSL đã có sẵn trong app, không build/link thêm bản riêng để tránh trùng symbol)
         run: |
           set -euo pipefail

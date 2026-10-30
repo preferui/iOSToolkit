@@ -64,6 +64,19 @@ targets:
           - zsign/src/third-party/zlib
           - zsign/src/third-party/minizip
           - zsign/openssl/include
+          - idevice/include
+        LIBRARY_SEARCH_PATHS:
+          - $(SRCROOT)/idevice/lib
+        OTHER_LDFLAGS:
+          - -lidevice_ffi
+          - -lresolv
+          - -liconv
+          - -framework
+          - Security
+          - -framework
+          - Network
+          - -framework
+          - SystemConfiguration
         OTHER_CPLUSPLUSFLAGS:
           - -std=gnu++17
           - -w
