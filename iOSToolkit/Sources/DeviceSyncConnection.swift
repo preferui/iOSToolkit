@@ -53,6 +53,23 @@ extension DeviceSyncManager {
         return lockdownd_connect(provider, &client)
     }
 
+    /// Kết nối AFC (Apple File Conduit) — dịch vụ cho phép đọc/ghi file trong vùng media của
+    /// thiết bị (ảnh, nhạc…), tách biệt khỏi sandbox của app. Thử lại vài lần vì ngay sau khi
+    /// đường hầm RPPairing vừa dựng xong, dịch vụ AFC đôi khi cần một chút thời gian mới sẵn sàng.
+    @discardableResult
+    func connectAfcClient(_ client: inout AfcClientHandle?) -> IdeviceErrorCode {
+        if requiresRPPairingTunnel, let rpAdapter, let rpHandshake {
+            var lastError: IdeviceErrorCode = IdeviceSuccess
+            for attempt in 0..<10 {
+                lastError = afc_client_connect_rsd(rpAdapter, rpHandshake, &client)
+                if lastError == IdeviceSuccess && client != nil { return lastError }
+                if attempt < 9 { Thread.sleep(forTimeInterval: 0.2) }
+            }
+            return lastError
+        }
+        return afc_client_connect(provider, &client)
+    }
+
     /// Dựng "đường hầm" RemotePairing (iOS 26.4 trở lên): đọc tệp RP pairing, tìm cổng dịch vụ
     /// RemotePairing qua Bonjour trên mạng cục bộ (RemotePairingDiscovery), rồi bắt tay (handshake).
     func establishRPPairingTunnel() -> Bool {

@@ -9,6 +9,9 @@ struct DeviceSyncView: View {
     @State private var message: String?
     @State private var isError = false
     @State private var showGuide = false
+    @State private var afcTesting = false
+    @State private var afcResult: String?
+    @State private var afcResultIsError = false
 
     var body: some View {
         Form {
@@ -62,6 +65,22 @@ struct DeviceSyncView: View {
                 Text("App sẽ tự thử kết nối lại khi app đang mở và tệp pairing hợp lệ, không cần bấm lại mỗi lần.")
             }
 
+            if manager.heartbeatReady {
+                Section {
+                    Button { runAfcTest() } label: {
+                        Label(afcTesting ? "Đang kiểm tra…" : "Kiểm tra đọc/ghi AFC", systemImage: "externaldrive.badge.checkmark")
+                    }
+                    .disabled(afcTesting)
+                    if let afcResult {
+                        Text(afcResult).font(.footnote).foregroundStyle(afcResultIsError ? .red : .green).textSelection(.enabled)
+                    }
+                } header: {
+                    Text("Kiểm tra sâu hơn")
+                } footer: {
+                    Text("Ghi thử 1 tệp nhỏ vào vùng media của thiết bị rồi đọc lại và xoá ngay — không đụng tới thư viện nhạc thật. Bước này cần làm trước khi tiến tới phần tiêm nhạc vào Apple Music.")
+                }
+            }
+
             if let message {
                 Section { Text(message).font(.footnote).foregroundStyle(isError ? .red : .secondary).textSelection(.enabled) }
             }
@@ -104,6 +123,22 @@ struct DeviceSyncView: View {
                     isError = true
                     message = "Không kết nối được. Kiểm tra lại: đã bật app VPN cục bộ (ví dụ LocalDevVPN) và tệp pairing còn đúng với thiết bị này chưa."
                 }
+            }
+        }
+    }
+
+    private func runAfcTest() {
+        afcTesting = true
+        afcResult = nil
+        manager.runAfcRoundTripTest { result in
+            afcTesting = false
+            switch result {
+            case .success(let text):
+                afcResultIsError = false
+                afcResult = text
+            case .failure(let error):
+                afcResultIsError = true
+                afcResult = error.localizedDescription
             }
         }
     }
