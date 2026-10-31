@@ -12,6 +12,9 @@ struct DeviceSyncView: View {
     @State private var afcTesting = false
     @State private var afcResult: String?
     @State private var afcResultIsError = false
+    @State private var libraryLoading = false
+    @State private var libraryResult: String?
+    @State private var libraryResultIsError = false
 
     var body: some View {
         Form {
@@ -79,6 +82,20 @@ struct DeviceSyncView: View {
                 } footer: {
                     Text("Ghi thử 1 tệp nhỏ vào vùng media của thiết bị rồi đọc lại và xoá ngay — không đụng tới thư viện nhạc thật. Bước này cần làm trước khi tiến tới phần tiêm nhạc vào Apple Music.")
                 }
+
+                Section {
+                    Button { runLibrarySummary() } label: {
+                        Label(libraryLoading ? "Đang đọc thư viện…" : "Xem tóm tắt thư viện nhạc", systemImage: "music.note.list")
+                    }
+                    .disabled(libraryLoading)
+                    if let libraryResult {
+                        Text(libraryResult).font(.footnote).foregroundStyle(libraryResultIsError ? .red : .green).textSelection(.enabled)
+                    }
+                } header: {
+                    Text("Thư viện Apple Music")
+                } footer: {
+                    Text("Chỉ ĐỌC: tải tạm database thư viện nhạc về để đếm số bài hát/playlist rồi xoá bản tải tạm ngay, không ghi gì lên thiết bị. Đây là bước xác nhận trước khi làm tính năng thêm nhạc trực tiếp vào Apple Music.")
+                }
             }
 
             if let message {
@@ -139,6 +156,22 @@ struct DeviceSyncView: View {
             case .failure(let error):
                 afcResultIsError = true
                 afcResult = error.localizedDescription
+            }
+        }
+    }
+
+    private func runLibrarySummary() {
+        libraryLoading = true
+        libraryResult = nil
+        manager.fetchLibrarySummary { result in
+            libraryLoading = false
+            switch result {
+            case .success(let summary):
+                libraryResultIsError = false
+                libraryResult = "Số bài hát: \(summary.songCount) · Số playlist: \(summary.playlistCount) · Phiên bản schema: \(summary.iosSchemaUserVersion)"
+            case .failure(let error):
+                libraryResultIsError = true
+                libraryResult = error.localizedDescription
             }
         }
     }

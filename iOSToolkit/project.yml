@@ -71,6 +71,7 @@ targets:
           - -lidevice_ffi
           - -lresolv
           - -liconv
+          - -lsqlite3
           - -framework
           - Security
           - -framework
