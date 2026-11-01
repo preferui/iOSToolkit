@@ -70,6 +70,16 @@ struct DeviceSyncView: View {
 
             if manager.heartbeatReady {
                 Section {
+                    NavigationLink {
+                        DeviceSyncMusicView()
+                    } label: {
+                        Label("Thêm / dọn nhạc trong thư viện", systemImage: "music.note.list")
+                    }
+                } footer: {
+                    Text("Thêm bài hát từ tệp nhạc trong máy vào thư viện Apple Music của thiết bị, hoặc xoá bài hát đã có. Nên dùng thử tính năng \"Xem tóm tắt thư viện nhạc\" bên dưới trước để chắc chắn đọc thư viện ổn, trước khi ghi.")
+                }
+
+                Section {
                     Button { runAfcTest() } label: {
                         Label(afcTesting ? "Đang kiểm tra…" : "Kiểm tra đọc/ghi AFC", systemImage: "externaldrive.badge.checkmark")
                     }

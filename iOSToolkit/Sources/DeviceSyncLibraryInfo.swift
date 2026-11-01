@@ -42,29 +42,6 @@ extension DeviceSyncManager {
     private static let mediaLibraryDirectory = "/iTunes_Control/iTunes"
     private static let mediaLibraryFilename = "MediaLibrary.sqlitedb"
 
-    /// Tải một tệp từ AFC về Data trong bộ nhớ, dùng chính AFC client đang truyền vào (để dùng lại
-    /// 1 kết nối cho nhiều tệp — tránh mở/đóng AFC liên tục). Trả về nil nếu tệp không tồn tại
-    /// (bình thường với -wal/-shm nếu Apple Music chưa ghi gì dở dang) hoặc đọc lỗi.
-    private func downloadFileFromDevice(_ afc: AfcClientHandle, remotePath: String) -> Data? {
-        var file: AfcFileHandle?
-        let openErr = afc_file_open(afc, remotePath, AfcRdOnly, &file)
-        guard openErr == IdeviceSuccess, let file else {
-            if let openErr { idevice_error_free(openErr) }
-            return nil
-        }
-        var dataPtr: UnsafeMutablePointer<UInt8>?
-        var length = 0
-        let readErr = afc_file_read_entire(file, &dataPtr, &length)
-        afc_file_close(file)
-        guard readErr == IdeviceSuccess, let dataPtr, length > 0 else {
-            if let readErr { idevice_error_free(readErr) }
-            return nil
-        }
-        let data = Data(bytes: dataPtr, count: length)
-        afc_file_read_data_free(dataPtr, length)
-        return data
-    }
-
     /// Đọc tóm tắt thư viện nhạc: tải MediaLibrary.sqlitedb (+ -wal/-shm nếu có, để không bỏ sót
     /// thay đổi chưa "chốt" vào tệp chính) về một thư mục tạm, mở CHỈ ĐỌC bằng SQLite3, đếm số bài
     /// hát và playlist rồi dọn dẹp ngay — không ghi gì lên thiết bị, không sửa tệp tải về.
@@ -78,14 +55,14 @@ extension DeviceSyncManager {
             }
             defer { afc_client_free(afc) }
 
-            guard let mainData = self.downloadFileFromDevice(
+            guard let mainData = self.afcReadFile(
                 afc, remotePath: "\(Self.mediaLibraryDirectory)/\(Self.mediaLibraryFilename)"
             ) else {
                 DispatchQueue.main.async { completion(.failure(LibraryInfoError.mainDatabaseMissing)) }
                 return
             }
-            let walData = self.downloadFileFromDevice(afc, remotePath: "\(Self.mediaLibraryDirectory)/\(Self.mediaLibraryFilename)-wal")
-            let shmData = self.downloadFileFromDevice(afc, remotePath: "\(Self.mediaLibraryDirectory)/\(Self.mediaLibraryFilename)-shm")
+            let walData = self.afcReadFile(afc, remotePath: "\(Self.mediaLibraryDirectory)/\(Self.mediaLibraryFilename)-wal")
+            let shmData = self.afcReadFile(afc, remotePath: "\(Self.mediaLibraryDirectory)/\(Self.mediaLibraryFilename)-shm")
 
             let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("libinfo-\(UUID().uuidString)", isDirectory: true)
             let dbURL = tempDir.appendingPathComponent(Self.mediaLibraryFilename)
