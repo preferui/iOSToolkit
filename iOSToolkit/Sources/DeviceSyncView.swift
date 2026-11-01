@@ -15,6 +15,9 @@ struct DeviceSyncView: View {
     @State private var libraryLoading = false
     @State private var libraryResult: String?
     @State private var libraryResultIsError = false
+    @State private var debugLoading = false
+    @State private var debugResult: String?
+    @State private var debugResultIsError = false
 
     var body: some View {
         Form {
@@ -106,6 +109,20 @@ struct DeviceSyncView: View {
                 } footer: {
                     Text("Chỉ ĐỌC: tải tạm database thư viện nhạc về để đếm số bài hát/playlist rồi xoá bản tải tạm ngay, không ghi gì lên thiết bị. Đây là bước xác nhận trước khi làm tính năng thêm nhạc trực tiếp vào Apple Music.")
                 }
+
+                Section {
+                    Button { runRecentItemsDebug() } label: {
+                        Label(debugLoading ? "Đang đọc…" : "Xem chi tiết 5 bài mới sửa gần đây (debug)", systemImage: "ladybug")
+                    }
+                    .disabled(debugLoading)
+                    if let debugResult {
+                        Text(debugResult).font(.system(.footnote, design: .monospaced)).foregroundStyle(debugResultIsError ? .red : .primary).textSelection(.enabled)
+                    }
+                } header: {
+                    Text("Chẩn đoán")
+                } footer: {
+                    Text("Chỉ ĐỌC: in ra nguyên văn các cột title/location/media_kind… của vài bài mới sửa gần đây trong database, để kiểm tra khi app Nhạc hiển thị bất thường (ví dụ tên bài trống).")
+                }
             }
 
             if let message {
@@ -182,6 +199,22 @@ struct DeviceSyncView: View {
             case .failure(let error):
                 libraryResultIsError = true
                 libraryResult = error.localizedDescription
+            }
+        }
+    }
+
+    private func runRecentItemsDebug() {
+        debugLoading = true
+        debugResult = nil
+        manager.fetchRecentItemsDebug { result in
+            debugLoading = false
+            switch result {
+            case .success(let text):
+                debugResultIsError = false
+                debugResult = text
+            case .failure(let error):
+                debugResultIsError = true
+                debugResult = error.localizedDescription
             }
         }
     }
