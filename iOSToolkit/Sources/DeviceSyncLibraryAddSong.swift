@@ -201,6 +201,18 @@ extension DeviceSyncManager {
         return exists
     }
 
+    /// COUNT(*) FROM item + 1 — cùng cách bản gốc ByeTunes sinh track_number mặc định khi tệp
+    /// nhạc không tự có số track riêng.
+    private static func nextTrackNumber(_ db: OpaquePointer) -> Int64 {
+        var count: Int64 = 0
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM item", -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW { count = sqlite3_column_int64(stmt, 0) }
+        }
+        sqlite3_finalize(stmt)
+        return count + 1
+    }
+
     private static func lookupOrCreatePid(_ db: OpaquePointer, table: String, nameColumn: String, pidColumn: String, name: String) throws -> (pid: Int64, isNew: Bool) {
         var stmt: OpaquePointer?
         if sqlite3_prepare_v2(db, "SELECT \(pidColumn) FROM \(table) WHERE \(nameColumn) = ?", -1, &stmt, nil) == SQLITE_OK {
@@ -225,6 +237,12 @@ extension DeviceSyncManager {
         let (genreId, genreIsNew) = try lookupOrCreatePid(db, table: "genre", nameColumn: "genre", pidColumn: "genre_id", name: m.genre)
 
         let itemPid = generatePersistentId()
+
+        // track_number: bản gốc ByeTunes dùng số đếm TĂNG DẦN (COUNT(*) FROM item + 1) khi tệp
+        // nhạc không có track number riêng — KHÔNG hardcode 1 cho mọi bài. 2 bài cùng album có
+        // disc_number+track_number trùng nhau có thể khiến app Nhạc hiển thị sai (từng gặp: tên
+        // bài trống khi 2 bài cùng album đều "track 1").
+        let trackNumber = Self.nextTrackNumber(db)
 
         let titleSort = insertSortMap(db, name: m.title)
         let artistSort = insertSortMap(db, name: m.artist)
@@ -255,7 +273,7 @@ extension DeviceSyncManager {
                 \(albumArtistPid), \(artistSort.order), \(artistSort.section),
                 0, 0, 26,
                 \(genreId), \(genreSort.order), \(genreSort.section),
-                1, 1, 1,
+                1, \(trackNumber), 1,
                 3840, 0,
                 0, 1, 2, 0, 0,
                 1, 0, \(now), 0, 0, \(now), 0
