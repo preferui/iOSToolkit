@@ -36,6 +36,7 @@ extension DeviceSyncManager {
 
         let notifications = [
             "com.apple.itunes-mobdev.syncWillStart",
+            "com.apple.itunes-mobdev.syncLockRequest",
             "com.apple.itunes-mobdev.syncDidStart",
             "com.apple.itunes-mobdev.syncDidFinish"
         ]

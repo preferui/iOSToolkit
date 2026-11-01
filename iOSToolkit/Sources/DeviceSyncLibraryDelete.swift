@@ -163,6 +163,7 @@ extension DeviceSyncManager {
             "CREATE TEMP TABLE _touched_iartist AS SELECT DISTINCT item_artist_pid p FROM item WHERE item_pid IN (SELECT item_pid FROM _del);",
             "CREATE TEMP TABLE _touched_aartist AS SELECT DISTINCT album_artist_pid p FROM item WHERE item_pid IN (SELECT item_pid FROM _del);",
             "CREATE TEMP TABLE _touched_genre AS SELECT DISTINCT genre_id p FROM item WHERE item_pid IN (SELECT item_pid FROM _del);",
+            "INSERT OR IGNORE INTO _del SELECT i.item_pid FROM item i LEFT JOIN item_extra e ON e.item_pid=i.item_pid WHERE i.album_pid IN (SELECT p FROM _touched_album) AND i.in_my_library=0 AND IFNULL(e.location,'')='';",
             "DELETE FROM item WHERE item_pid IN (SELECT item_pid FROM _del);",
             "CREATE TEMP TABLE _gone(p INTEGER PRIMARY KEY);",
             "INSERT OR IGNORE INTO _gone SELECT item_pid FROM _del;",

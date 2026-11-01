@@ -289,6 +289,10 @@ extension DeviceSyncManager {
         """)
 
         try execSQL(db, "INSERT OR REPLACE INTO item_stats (item_pid, date_accessed) VALUES (\(itemPid), \(now))")
+        // item_video/chapter: bản gốc ghi cho MỌI bài hát (kể cả nhạc thường, không chỉ video) —
+        // một số view trong app Nhạc join tới các bảng này, nên ghi hàng rỗng để không thiếu.
+        try execSQL(db, "INSERT OR REPLACE INTO item_video (item_pid, hls_asset_traits) VALUES (\(itemPid), 0)")
+        try execSQL(db, "INSERT OR REPLACE INTO chapter (item_pid) VALUES (\(itemPid))")
         try execSQL(db, """
             INSERT OR REPLACE INTO item_search (item_pid, search_title, search_album, search_artist, search_composer, search_album_artist)
             VALUES (\(itemPid), \(titleSort.order), \(albumSort.order), \(artistSort.order), 0, \(artistSort.order))
