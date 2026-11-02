@@ -401,6 +401,12 @@ extension DeviceSyncManager {
                 VALUES (\(genreId), '\(escaped)', X'\(groupingHex)', \(itemPid))
             """)
         }
+
+        // Bản gốc luôn chạy 3 câu "vá" này sau khi ghi xong — phòng trường hợp có hàng cũ sẵn
+        // trong thư viện (tạo bởi app khác hoặc phiên bản cũ) còn sync_id = 0.
+        try? execSQL(db, "UPDATE album SET sync_id = abs(random()), keep_local = 1 WHERE sync_id = 0")
+        try? execSQL(db, "UPDATE album_artist SET sync_id = abs(random()), keep_local = 1 WHERE sync_id = 0")
+        try? execSQL(db, "UPDATE item_artist SET sync_id = abs(random()), keep_local = 1 WHERE sync_id = 0")
     }
 }
 
