@@ -56,7 +56,12 @@ extension DeviceSyncManager {
                 finish(.failure(AddSongError.schemaUnexpected("không mở lại được database cục bộ")))
                 return
             }
-            defer { sqlite3_close(db) }
+            // QUAN TRỌNG: đóng connection này NGAY sau khi ghi xong, TRƯỚC khi gọi
+            // commitMediaLibrary (hàm đó tự mở 1 connection riêng tới CÙNG tệp để checkpoint WAL
+            // + đổi journal_mode trước khi tải lên thiết bị). Nếu còn connection khác đang mở tới
+            // cùng tệp, SQLite không đổi journal_mode được (yêu cầu truy cập độc quyền) và việc
+            // checkpoint có thể không gộp hết dữ liệu — tệp tải lên thiết bị dễ thiếu đúng phần bài
+            // hát vừa ghi. KHÔNG dùng `defer` ở đây để tránh giữ connection mở xuyên suốt hàm.
 
             do {
                 reportProgress("Đang kiểm tra trùng lặp…")
@@ -64,6 +69,7 @@ extension DeviceSyncManager {
 
                 let signature = "\(metadata.title)|\(metadata.artist)|\(metadata.album)"
                 if Self.existingSongSignatures(db).contains(signature) {
+                    sqlite3_close(db)
                     finish(.failure(AddSongError.alreadyExists(metadata.title)))
                     return
                 }
@@ -71,8 +77,11 @@ extension DeviceSyncManager {
                 reportProgress("Đang ghi thông tin bài hát vào database…")
                 try Self.insertSong(db, metadata: metadata)
             } catch {
+                sqlite3_close(db)
                 finish(.failure(error)); return
             }
+
+            sqlite3_close(db)
 
             reportProgress("Đang tải tệp âm thanh lên thiết bị…")
             let musicDir = "/iTunes_Control/Music/F00"

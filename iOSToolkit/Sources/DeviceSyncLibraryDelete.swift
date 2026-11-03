@@ -113,11 +113,13 @@ extension DeviceSyncManager {
                 finish(.failure(AddSongError.schemaUnexpected("không mở lại được database cục bộ")))
                 return
             }
-            defer { sqlite3_close(db) }
+            // Đóng connection này TRƯỚC khi commitMediaLibrary mở connection riêng để checkpoint —
+            // xem chú thích chi tiết trong DeviceSyncLibraryAddSong.swift.
 
             _ = Self.sqliteExecRaw(db, "BEGIN IMMEDIATE TRANSACTION")
             let success = Self.removeLibraryRowsAndResidue(db, itemPids: [song.itemPid])
             _ = Self.sqliteExecRaw(db, success ? "COMMIT" : "ROLLBACK")
+            sqlite3_close(db)
             guard success else {
                 finish(.failure(AddSongError.schemaUnexpected("xoá hàng database thất bại, đã rollback")))
                 return
