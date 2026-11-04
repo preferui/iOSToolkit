@@ -22,6 +22,7 @@ struct RootView: View {
         Tool(title: "Tải IPA từ App Store", subtitle: "Tải app theo ID bằng Apple ID của bạn, kể cả app đã bị gỡ nếu tài khoản từng nhận", icon: "arrow.down.app.fill", color: .blue, ready: true),
         Tool(title: "Đổi mật khẩu P12", subtitle: "Chọn gói zip chứng chỉ, nhập mật khẩu cũ và mới, ghi đè thẳng vào gói zip", icon: "key.fill", color: .green, ready: true, kind: 1),
         Tool(title: "Dọn dẹp ứng dụng", subtitle: "Quét cache và tệp tạm của từng ứng dụng", icon: "sparkles", color: .cyan, ready: true, kind: 2),
+        Tool(title: "Thêm nhạc vào Apple Music", subtitle: "Nhập MP3, M4A, FLAC và WAV trực tiếp vào thư viện", icon: "music.note", color: .pink, ready: true, kind: 3),
         Tool(title: "Ký IPA", subtitle: "Sắp có", icon: "signature", color: .purple, ready: false),
         Tool(title: "Công cụ khác", subtitle: "Sắp có", icon: "wrench.and.screwdriver.fill", color: .orange, ready: false),
     ]
@@ -35,6 +36,7 @@ struct RootView: View {
                             NavigationLink {
                                 if tool.kind == 1 { P12ToolView() }
                                 else if tool.kind == 2 { CleanerCompatibilityView() }
+                                else if tool.kind == 3 { AppleMusicInjectionView() }
                                 else { AppStoreToolView() }
                             } label: { row(tool) }
                         } else {
