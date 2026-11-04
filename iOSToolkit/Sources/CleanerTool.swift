@@ -494,3 +494,60 @@ struct CleanerCompatibilityView: View {
         .navigationBarBackButtonHidden(true)
     }
 }
+
+
+// MARK: - Developer Mode preflight
+struct DeveloperModeNoticeView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmed = false
+
+    var body: some View {
+        VStack(spacing: 22) {
+            Spacer(minLength: 24)
+            Image(systemName: "hammer.circle.fill")
+                .font(.system(size: 64))
+                .foregroundStyle(.orange)
+
+            VStack(spacing: 10) {
+                Text("Bật Developer Mode trước")
+                    .font(.system(size: 25, weight: .bold, design: .rounded))
+                    .multilineTextAlignment(.center)
+
+                Text("Trên iPhone, vào Cài đặt → Quyền riêng tư & Bảo mật → Chế độ nhà phát triển (Developer Mode), bật lên và khởi động lại nếu iOS yêu cầu.")
+                    .font(.body)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Bật Developer Mode trong Cài đặt", systemImage: "checkmark.circle")
+                Label("Khởi động lại và xác nhận bật sau khi iOS hỏi", systemImage: "arrow.clockwise")
+                Label("Mở lại iOS Toolkit rồi tiếp tục dọn dẹp", systemImage: "sparkles")
+            }
+            .font(.subheadline)
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+
+            NavigationLink {
+                CleanerToolView()
+            } label: {
+                Text("Tôi đã bật Developer Mode – tiếp tục")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Color.blue.gradient, in: RoundedRectangle(cornerRadius: 15))
+            }
+            .buttonStyle(.plain)
+
+            Button("Để sau") { dismiss() }
+                .foregroundStyle(.secondary)
+
+            Spacer(minLength: 18)
+        }
+        .padding(.horizontal, 22)
+        .navigationTitle("Chuẩn bị dọn dẹp")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
