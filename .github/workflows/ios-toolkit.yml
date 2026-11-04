@@ -53,7 +53,12 @@ jobs:
           mkdir -p iOSToolkit/Sources/AppleMusicEngine/Core
           cp /tmp/ByeTunes/MusicManager/Device/Manager/*.swift iOSToolkit/Sources/AppleMusicEngine/Device/Manager/
           cp /tmp/ByeTunes/MusicManager/Device/MediaLibrary/*.swift iOSToolkit/Sources/AppleMusicEngine/Device/MediaLibrary/
-          cp /tmp/ByeTunes/MusicManager/Metadata/SongMetadata/SongMetadata.swift iOSToolkit/Sources/AppleMusicEngine/Metadata/SongMetadata/\n          cp /tmp/ByeTunes/MusicManager/Metadata/SongMetadata/SongMetadataLocalFile.swift iOSToolkit/Sources/AppleMusicEngine/Metadata/SongMetadata/\n          cp /tmp/ByeTunes/MusicManager/Metadata/Lyrics/SongMetadataLyrics.swift iOSToolkit/Sources/AppleMusicEngine/Metadata/SongMetadata/\n          cp /tmp/ByeTunes/MusicManager/Metadata/SongMetadataNetworking.swift iOSToolkit/Sources/AppleMusicEngine/Metadata/SongMetadata/\n          cp /tmp/ByeTunes/MusicManager/Metadata/Providers/AppleMusicAPI.swift iOSToolkit/Sources/AppleMusicEngine/Metadata/SongMetadata/\n          cp /tmp/ByeTunes/MusicManager/Core/Config.swift iOSToolkit/Sources/AppleMusicEngine/Core/
+          cp /tmp/ByeTunes/MusicManager/Metadata/SongMetadata/SongMetadata.swift iOSToolkit/Sources/AppleMusicEngine/Metadata/SongMetadata/
+          cp /tmp/ByeTunes/MusicManager/Metadata/SongMetadata/SongMetadataLocalFile.swift iOSToolkit/Sources/AppleMusicEngine/Metadata/SongMetadata/
+          cp /tmp/ByeTunes/MusicManager/Metadata/Lyrics/SongMetadataLyrics.swift iOSToolkit/Sources/AppleMusicEngine/Metadata/SongMetadata/
+          cp /tmp/ByeTunes/MusicManager/Metadata/SongMetadataNetworking.swift iOSToolkit/Sources/AppleMusicEngine/Metadata/SongMetadata/
+          cp /tmp/ByeTunes/MusicManager/Metadata/Providers/AppleMusicAPI.swift iOSToolkit/Sources/AppleMusicEngine/Metadata/SongMetadata/
+          cp /tmp/ByeTunes/MusicManager/Core/Config.swift iOSToolkit/Sources/AppleMusicEngine/Core/
           cp /tmp/ByeTunes/MusicManager/Device/RemotePairingDiscovery.swift iOSToolkit/Sources/AppleMusicEngine/Device/
           cp /tmp/ByeTunes/MusicManager/Core/Logger.swift iOSToolkit/Sources/AppleMusicEngine/Core/
           cp /tmp/idevice/ffi/idevice.h iOSToolkit/Sources/idevice.h
