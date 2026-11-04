@@ -1,9 +1,24 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 
-private enum AppleMusicImportPurpose {
+private enum AppleMusicImportPurpose: String, Identifiable {
     case pairing
     case audio
+
+    var id: String { rawValue }
+
+    var contentTypes: [UTType] {
+        switch self {
+        case .pairing:
+            return [.data, .propertyList]
+        case .audio:
+            return ["mp3", "m4a", "aac", "flac", "wav", "alac", "aiff"]
+                .compactMap { UTType(filenameExtension: $0) }
+        }
+    }
+
+    var allowsMultipleSelection: Bool { self == .audio }
 }
 
 struct AppleMusicInjectionView: View {
@@ -13,22 +28,6 @@ struct AppleMusicInjectionView: View {
     @State private var status = "Nhập pairing file, bật LocalDevVPN rồi kết nối iPhone."
     @State private var progress = ""
     @State private var alertMessage: String?
-
-    private var audioTypes: [UTType] {
-        ["mp3", "m4a", "aac", "flac", "wav", "alac", "aiff"]
-            .compactMap { UTType(filenameExtension: $0) }
-    }
-
-    private var isImporterPresented: Binding<Bool> {
-        Binding(
-            get: { importPurpose != nil },
-            set: { if !$0 { importPurpose = nil } }
-        )
-    }
-
-    private var allowedImportTypes: [UTType] {
-        importPurpose == .audio ? audioTypes : [.propertyList, .data]
-    }
 
     var body: some View {
         List {
@@ -77,20 +76,26 @@ struct AppleMusicInjectionView: View {
             }
 
             Section {
-                Text("Hỗ trợ MP3, M4A, AAC, FLAC và WAV. Chỉ cần bật LocalDevVPN trước khi kết nối; VPN không tự chọn pairing file. Hãy sao lưu thư viện Apple Music trước khi ghi dữ liệu.")
+                Text("Hỗ trợ MP3, M4A, AAC, FLAC và WAV. Bật LocalDevVPN trước khi kết nối. Hãy sao lưu thư viện Apple Music trước khi ghi dữ liệu.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Apple Music")
-        // Keep one fileImporter modifier: stacking two importers on the same
-        // view can prevent the second document picker from being presented.
-        .fileImporter(
-            isPresented: isImporterPresented,
-            allowedContentTypes: allowedImportTypes,
-            allowsMultipleSelection: importPurpose == .audio,
-            onCompletion: handleImport
-        )
+        // Use the native UIKit document picker. On iOS 17, a state-driven
+        // SwiftUI fileImporter attached to a List can fail to present.
+        .sheet(item: $importPurpose) { purpose in
+            AppleMusicDocumentPicker(purpose: purpose) { result in
+                importPurpose = nil
+                switch purpose {
+                case .pairing:
+                    importPairing(result)
+                case .audio:
+                    importSongs(result)
+                }
+            }
+            .ignoresSafeArea()
+        }
         .alert("Apple Music", isPresented: Binding(
             get: { alertMessage != nil },
             set: { if !$0 { alertMessage = nil } }
@@ -104,35 +109,12 @@ struct AppleMusicInjectionView: View {
         }
     }
 
-    private func handleImport(_ result: Result<[URL], Error>) {
-        let purpose = importPurpose
-        importPurpose = nil
-
-        switch purpose {
-        case .pairing:
-            importPairing(result)
-        case .audio:
-            importSongs(result)
-        case .none:
-            break
-        }
-    }
-
     private func importPairing(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
-            let hasAccess = url.startAccessingSecurityScopedResource()
-            defer { if hasAccess { url.stopAccessingSecurityScopedResource() } }
-
-            // Copy into the app container while the security-scoped URL is valid.
-            let folder = URL.documentsDirectory.appendingPathComponent("Pairing", isDirectory: true)
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let destination = folder.appendingPathComponent("pairing_file.plist")
-            if FileManager.default.fileExists(atPath: destination.path) {
-                try FileManager.default.removeItem(at: destination)
-            }
-            try FileManager.default.copyItem(at: url, to: destination)
-            try device.importPairingFile(from: destination)
+            // The document picker returns a local copy (asCopy: true).
+            // DeviceManager validates the selected pairing format before saving it.
+            try device.importPairingFile(from: url)
             device.refreshExpectedPairingFileState()
             status = "Đã nhập pairing file. LocalDevVPN đang bật thì hãy nhấn Kết nối lại thiết bị."
         } catch {
@@ -186,6 +168,44 @@ struct AppleMusicInjectionView: View {
             }
         } catch {
             alertMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct AppleMusicDocumentPicker: UIViewControllerRepresentable {
+    let purpose: AppleMusicImportPurpose
+    let completion: (Result<[URL], Error>) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(completion: completion)
+    }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(
+            forOpeningContentTypes: purpose.contentTypes,
+            asCopy: true
+        )
+        picker.allowsMultipleSelection = purpose.allowsMultipleSelection
+        picker.delegate = context.coordinator
+        picker.shouldShowFileExtensions = true
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        private let completion: (Result<[URL], Error>) -> Void
+
+        init(completion: @escaping (Result<[URL], Error>) -> Void) {
+            self.completion = completion
+        }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            completion(.success(urls))
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            completion(.success([]))
         }
     }
 }
