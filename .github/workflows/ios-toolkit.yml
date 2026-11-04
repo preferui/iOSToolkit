@@ -2,8 +2,8 @@ name: Build iOS Toolkit IPA
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-    paths: ['iOSToolkit/**', '.github/workflows/ios-toolkit.yml']
+    branches: [main, 'feature/apple-music-injection']
+    paths: ['iOSToolkit/**', '.github/workflows/ios-toolkit.yml', 'THIRD_PARTY_NOTICES.md']
 permissions:
   contents: write
 jobs:
@@ -29,6 +29,36 @@ jobs:
         run: |
           xcodebuild -downloadPlatform iOS || true
           brew install xcodegen
+      - name: Build idevice FFI và chuẩn bị engine ByeTunes
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          source "$HOME/.cargo/env"
+          rustup target add aarch64-apple-ios
+
+          git clone https://github.com/jkcoxson/idevice.git /tmp/idevice
+          git -C /tmp/idevice checkout 89702099f4d7552f704f93b4526756abda319ceb
+          cd /tmp/idevice
+          IPHONEOS_DEPLOYMENT_TARGET=16.0 cargo build --release --package idevice-ffi --target aarch64-apple-ios
+          test -s target/aarch64-apple-ios/release/libidevice_ffi.a
+          test -s ffi/idevice.h
+
+          git clone https://github.com/EduAlexxis/ByeTunes.git /tmp/ByeTunes
+          git -C /tmp/ByeTunes checkout 945b9a3a7231c1b46795ee44587bf84a2f99a841
+          cd "$GITHUB_WORKSPACE"
+          mkdir -p iOSToolkit/Sources/AppleMusicEngine/Device/Manager
+          mkdir -p iOSToolkit/Sources/AppleMusicEngine/Device/MediaLibrary
+          mkdir -p iOSToolkit/Sources/AppleMusicEngine/Metadata/SongMetadata
+          mkdir -p iOSToolkit/Sources/AppleMusicEngine/Core
+          cp /tmp/ByeTunes/MusicManager/Device/Manager/*.swift iOSToolkit/Sources/AppleMusicEngine/Device/Manager/
+          cp /tmp/ByeTunes/MusicManager/Device/MediaLibrary/*.swift iOSToolkit/Sources/AppleMusicEngine/Device/MediaLibrary/
+          cp /tmp/ByeTunes/MusicManager/Metadata/SongMetadata/*.swift iOSToolkit/Sources/AppleMusicEngine/Metadata/SongMetadata/
+          cp /tmp/ByeTunes/MusicManager/Device/RemotePairingDiscovery.swift iOSToolkit/Sources/AppleMusicEngine/Device/
+          cp /tmp/ByeTunes/MusicManager/Core/Logger.swift iOSToolkit/Sources/AppleMusicEngine/Core/
+          cp /tmp/idevice/ffi/idevice.h iOSToolkit/Sources/idevice.h
+          mkdir -p iOSToolkit/Vendor/idevice
+          cp /tmp/idevice/target/aarch64-apple-ios/release/libidevice_ffi.a iOSToolkit/Vendor/idevice/
       - name: Tạo project và build
         shell: bash
         run: |
@@ -40,10 +70,11 @@ jobs:
           xcodebuild -project iOSToolkit.xcodeproj -scheme iOSToolkit -configuration Release \
             -derivedDataPath ../build -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
+            OTHER_LDFLAGS="-lz -framework IOSurface -framework Security -framework CoreFoundation -framework Network -L$(pwd)/Vendor/idevice -lidevice_ffi" \
             build 2>&1 | tee ../build.log
           rc=${PIPESTATUS[0]}
           if [ $rc -ne 0 ]; then
-            grep -E "error:|error " ../build.log | sort -u | head -40 > ../errors.txt || true
+            grep -E "error:|error " ../build.log | sort -u | head -60 > ../errors.txt || true
             while IFS= read -r l; do echo "::error::${l:0:400}"; done < ../errors.txt
             exit $rc
           fi
