@@ -3,3 +3,4 @@
 #import "Kernel/kexploit/kexploit_opa334.h"
 #import "Kernel/kexploit/kutils.h"
 #import "Kernel/kexploit/sandbox_escape.h"
+#import "idevice.h"
