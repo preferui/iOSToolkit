@@ -520,26 +520,41 @@ struct DeveloperModeNoticeView: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                Label("Bật Developer Mode trong Cài đặt", systemImage: "checkmark.circle")
-                Label("Khởi động lại và xác nhận bật sau khi iOS hỏi", systemImage: "arrow.clockwise")
-                Label("Mở lại iOS Toolkit rồi tiếp tục dọn dẹp", systemImage: "sparkles")
+                Label("Cài đặt → Quyền riêng tư & Bảo mật → Chế độ nhà phát triển", systemImage: "gear")
+                Label("Bật Developer Mode và xác nhận sau khi iPhone khởi động lại nếu được yêu cầu", systemImage: "arrow.clockwise")
+                Label("Nếu máy vừa khởi động lại, hãy kích hoạt lại jailbreak trước khi chạy Cleaner", systemImage: "wrench.and.screwdriver")
+                Label("Mở lại iOS Toolkit rồi mới tiếp tục dọn dẹp", systemImage: "sparkles")
             }
             .font(.subheadline)
             .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
 
+            Toggle(isOn: $confirmed) {
+                Text("Tôi đã bật Developer Mode và jailbreak hiện đang hoạt động")
+                    .font(.subheadline.weight(.medium))
+            }
+            .tint(.green)
+            .padding(.vertical, 4)
+
             NavigationLink {
                 CleanerToolView()
             } label: {
-                Text("Tôi đã bật Developer Mode – tiếp tục")
+                Text("Tiếp tục vào Dọn dẹp")
                     .font(.headline)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
                     .background(Color.blue.gradient, in: RoundedRectangle(cornerRadius: 15))
+                    .opacity(confirmed ? 1 : 0.45)
             }
             .buttonStyle(.plain)
+            .disabled(!confirmed)
+
+            Text("Lưu ý: iOS Toolkit không thể tự xác minh trạng thái Developer Mode hoặc jailbreak. Xác nhận chỉ mở bước tiếp theo; nó không bảo đảm thiết bị sẽ không tự khởi động lại.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
 
             Button("Để sau") { dismiss() }
                 .foregroundStyle(.secondary)
