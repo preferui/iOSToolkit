@@ -39,7 +39,7 @@ struct IPASourcesView: View {
                 Picker("Nguồn", selection: $selected) {
                     ForEach(sources, id: \.self) { Text(URL(string: $0)?.host ?? $0).tag($0) }
                 }
-                .onChange(of: selected) { _, _ in items = []; error = nil }
+                .onChange(of: selected) { _ in items = []; error = nil }
                 Button { showAdd = true } label: { Label("Thêm nguồn", systemImage: "plus.circle") }
                 if sources.count > 1 {
                     Button(role: .destructive) {
