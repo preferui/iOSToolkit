@@ -1,17 +1,33 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private enum AppleMusicImportPurpose {
+    case pairing
+    case audio
+}
+
 struct AppleMusicInjectionView: View {
     @ObservedObject private var device = DeviceManager.shared
-    @State private var showingPairingImporter = false
-    @State private var showingMusicImporter = false
+    @State private var importPurpose: AppleMusicImportPurpose?
     @State private var isWorking = false
-    @State private var status = "Import a pairing file, connect LocalDevVPN, then choose audio files."
+    @State private var status = "Nhập pairing file, bật LocalDevVPN rồi kết nối iPhone."
     @State private var progress = ""
     @State private var alertMessage: String?
-    
+
     private var audioTypes: [UTType] {
-        ["mp3", "m4a", "aac", "flac", "wav", "alac", "aiff"].compactMap { UTType(filenameExtension: $0) }
+        ["mp3", "m4a", "aac", "flac", "wav", "alac", "aiff"]
+            .compactMap { UTType(filenameExtension: $0) }
+    }
+
+    private var isImporterPresented: Binding<Bool> {
+        Binding(
+            get: { importPurpose != nil },
+            set: { if !$0 { importPurpose = nil } }
+        )
+    }
+
+    private var allowedImportTypes: [UTType] {
+        importPurpose == .audio ? audioTypes : [.propertyList, .data]
     }
 
     var body: some View {
@@ -19,18 +35,20 @@ struct AppleMusicInjectionView: View {
             Section("Thiết bị") {
                 LabeledContent("Kết nối", value: device.connectionStatus)
                 LabeledContent("Pairing", value: device.hasValidExpectedPairingFile ? "Đã nhập" : "Chưa có")
+
                 Button {
-                    showingPairingImporter = true
+                    importPurpose = .pairing
                 } label: {
-                    Label("Nhập pairing file", systemImage: "link")
+                    Label("Chọn pairing file", systemImage: "doc.badge.plus")
                 }
                 .disabled(isWorking)
+
                 Button {
                     device.startHeartbeat(forceReconnect: true) { success in
                         DispatchQueue.main.async {
                             status = success
                                 ? "Đã kết nối. Bạn có thể chọn nhạc."
-                                : "Không kết nối được. Hãy bật LocalDevVPN và kiểm tra pairing file."
+                                : "Không kết nối được. Kiểm tra LocalDevVPN và pairing file."
                         }
                     }
                 } label: {
@@ -41,11 +59,12 @@ struct AppleMusicInjectionView: View {
 
             Section("Thêm nhạc vào Apple Music") {
                 Button {
-                    showingMusicImporter = true
+                    importPurpose = .audio
                 } label: {
                     Label("Chọn tệp nhạc", systemImage: "music.note")
                 }
                 .disabled(isWorking || !device.heartbeatReady)
+
                 if isWorking {
                     ProgressView()
                     Text(progress.isEmpty ? "Đang xử lý…" : progress)
@@ -58,15 +77,24 @@ struct AppleMusicInjectionView: View {
             }
 
             Section {
-                Text("Hỗ trợ MP3, M4A, AAC, FLAC và WAV. Cần LocalDevVPN đang kết nối cùng pairing file hợp lệ. Trước khi ghi thư viện, hãy sao lưu dữ liệu Apple Music.")
+                Text("Hỗ trợ MP3, M4A, AAC, FLAC và WAV. Chỉ cần bật LocalDevVPN trước khi kết nối; VPN không tự chọn pairing file. Hãy sao lưu thư viện Apple Music trước khi ghi dữ liệu.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Apple Music")
-        .fileImporter(isPresented: $showingPairingImporter, allowedContentTypes: [.propertyList, .data], allowsMultipleSelection: false, onCompletion: importPairing)
-        .fileImporter(isPresented: $showingMusicImporter, allowedContentTypes: audioTypes, allowsMultipleSelection: true, onCompletion: importSongs)
-        .alert("Apple Music", isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
+        // Keep one fileImporter modifier: stacking two importers on the same
+        // view can prevent the second document picker from being presented.
+        .fileImporter(
+            isPresented: isImporterPresented,
+            allowedContentTypes: allowedImportTypes,
+            allowsMultipleSelection: importPurpose == .audio,
+            onCompletion: handleImport
+        )
+        .alert("Apple Music", isPresented: Binding(
+            get: { alertMessage != nil },
+            set: { if !$0 { alertMessage = nil } }
+        )) {
             Button("Đóng", role: .cancel) { alertMessage = nil }
         } message: {
             Text(alertMessage ?? "")
@@ -76,14 +104,39 @@ struct AppleMusicInjectionView: View {
         }
     }
 
+    private func handleImport(_ result: Result<[URL], Error>) {
+        let purpose = importPurpose
+        importPurpose = nil
+
+        switch purpose {
+        case .pairing:
+            importPairing(result)
+        case .audio:
+            importSongs(result)
+        case .none:
+            break
+        }
+    }
+
     private func importPairing(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
-            try device.importPairingFile(from: url)
+            let hasAccess = url.startAccessingSecurityScopedResource()
+            defer { if hasAccess { url.stopAccessingSecurityScopedResource() } }
+
+            // Copy into the app container while the security-scoped URL is valid.
+            let folder = URL.documentsDirectory.appendingPathComponent("Pairing", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let destination = folder.appendingPathComponent("pairing_file.plist")
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.copyItem(at: url, to: destination)
+            try device.importPairingFile(from: destination)
             device.refreshExpectedPairingFileState()
-            status = "Đã nhập pairing file. Hãy bật LocalDevVPN rồi kết nối thiết bị."
+            status = "Đã nhập pairing file. LocalDevVPN đang bật thì hãy nhấn Kết nối lại thiết bị."
         } catch {
-            alertMessage = error.localizedDescription
+            alertMessage = "Không thể nhập pairing file: \(error.localizedDescription)"
         }
     }
 
@@ -94,21 +147,25 @@ struct AppleMusicInjectionView: View {
             isWorking = true
             progress = "Đang đọc metadata…"
             status = ""
+
             Task {
                 do {
                     let staging = URL.documentsDirectory.appendingPathComponent("AppleMusicImports", isDirectory: true)
                     try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
                     var songs: [SongMetadata] = []
+
                     for source in urls {
                         let scoped = source.startAccessingSecurityScopedResource()
                         defer { if scoped { source.stopAccessingSecurityScopedResource() } }
-                        let destination = staging.appendingPathComponent(UUID().uuidString + "." + source.pathExtension.lowercased())
+                        let ext = source.pathExtension.isEmpty ? "m4a" : source.pathExtension.lowercased()
+                        let destination = staging.appendingPathComponent(UUID().uuidString + "." + ext)
                         if FileManager.default.fileExists(atPath: destination.path) {
                             try FileManager.default.removeItem(at: destination)
                         }
                         try FileManager.default.copyItem(at: source, to: destination)
                         songs.append(try await SongMetadata.fromURL(destination))
                     }
+
                     await MainActor.run { progress = "Đang chép nhạc vào thiết bị…" }
                     device.injectSongs(songs: songs, progress: { message in
                         DispatchQueue.main.async { progress = message }
