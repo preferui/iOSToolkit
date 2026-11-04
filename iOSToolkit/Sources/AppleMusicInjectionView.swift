@@ -84,7 +84,7 @@ struct AppleMusicInjectionView: View {
         .navigationTitle("Apple Music")
         // Use the native UIKit document picker. On iOS 17, a state-driven
         // SwiftUI fileImporter attached to a List can fail to present.
-        .sheet(item: $importPurpose) { purpose in
+        .fullScreenCover(item: $importPurpose) { purpose in
             AppleMusicDocumentPicker(purpose: purpose) { result in
                 importPurpose = nil
                 switch purpose {
