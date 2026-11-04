@@ -464,7 +464,7 @@ struct CleanerCompatibilityView: View {
 
                 if CleanerCompatibilityPolicy.isSupported {
                     NavigationLink {
-                        CleanerToolView()
+                        DeveloperModeNoticeView()
                     } label: {
                         HStack {
                             Text("Tiếp tục vào Dọn dẹp")
